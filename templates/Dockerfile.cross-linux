@@ -2,8 +2,11 @@
 # 基于 cross 官方目标镜像（含 Rust 工具链和交叉编译基础设施），
 # 在此之上安装 GTK/WebKit2GTK 等 Tauri v2 系统依赖。
 # 此文件由 hound-tauri-build 的 linux:init 任务自动复制到 src-tauri/
+#
+# 注意：必须使用 :main 标签（Ubuntu 24.04）。cross 的 :latest 基于 Ubuntu
+# 16.04（已 EOL，apt 源失效且无 webkit2gtk-4.x 包），会导致构建失败。
 
-FROM ghcr.io/cross-rs/x86_64-unknown-linux-gnu:latest
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main
 
 ENV DEBIAN_FRONTEND=noninteractive
 
