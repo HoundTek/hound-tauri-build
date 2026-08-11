@@ -6,7 +6,7 @@ import { makePage, running, toggleFinished, setScrollCallback, isFooterEditing, 
 import { initEvents, on, destroyEvents } from './utils/events.mjs';
 import { advanceTick } from './utils/tick.mjs';
 import { logSel } from './utils/focus.mjs';
-import { getTerminalSize } from './utils/terminal-size.mjs';
+import { getTerminalSize, initTerminalSize, updateTerminalSize } from './utils/terminal-size.mjs';
 
 const ALT_ON   = '\x1b[?1049h';
 const ALT_OFF  = '\x1b[?1049l';
@@ -29,10 +29,14 @@ const bufs = ['', ''];
 
 function buildFrame() {
   advanceTick();
-  const page = makePage();
-  bufs[back] = HOME + page.join('\n') + CLEAR_EOS;
-  back = 1 - back;
-  process.stdout.write(bufs[1 - back]);
+  try {
+    const page = makePage();
+    bufs[back] = HOME + page.join('\n') + CLEAR_EOS;
+    back = 1 - back;
+    process.stdout.write(bufs[1 - back]);
+  } catch (_) {
+    // 渲染异常不杀死 TUI：跳过本帧，等待下帧重试
+  }
 }
 
 function redraw() {
@@ -123,8 +127,16 @@ function bindExitPanel() {
 function cleanupAndExit() {
   clearInterval(updateTimer);
   destroyEvents();
-  process.stdout.write(ALT_OFF + WRAP_ON + SHOW);
+  restoreTerminal();
   process.exit(0);
+}
+
+/** 完整恢复终端状态（正常退出与崩溃兜底共用） */
+function restoreTerminal() {
+  try {
+    process.stdout.write(ALT_OFF + WRAP_ON + SHOW + '\x1b[?1002l\x1b[?1003l\x1b[?1006l');
+  } catch (_) {}
+  try { process.stdin.setRawMode?.(false); } catch (_) {}
 }
 
 // ── TCP 连接后端 ──
@@ -166,6 +178,7 @@ function handleMessage(msg) {
         bindExitPanel();
         setScrollCallback(requestRedraw);
         on('resize', redraw);
+        initTerminalSize();
         redraw();
         updateTimer = setInterval(redraw, 500);
       }
@@ -188,3 +201,38 @@ function handleMessage(msg) {
       break;
   }
 }
+
+// ── 崩溃兜底：任何未捕获异常/拒绝都必须恢复终端，避免残留 raw/mouse/alt-screen ──
+
+function crashCleanup(err) {
+  clearInterval(updateTimer);
+  try { destroyEvents(); } catch (_) {}
+  restoreTerminal();
+  try { console.error('\n[TUI] fatal error:', err && (err.stack || err.message || err)); } catch (_) {}
+  process.exit(1);
+}
+
+process.on('uncaughtException', (err) => {
+  // 渲染异常已在 buildFrame 内隔离；此处兜底剩余异常
+  crashCleanup(err);
+});
+process.on('unhandledRejection', (reason) => {
+  crashCleanup(reason);
+});
+
+// ── 父进程监控：主进程意外崩溃/退出时自动清理终端，避免孤儿进程残留 ──
+
+const PARENT_PID = process.ppid;
+setInterval(() => {
+  try {
+    process.kill(PARENT_PID, 0); // 仅探测进程是否存活
+  } catch (_) {
+    // 父进程已退出 → 清理终端并退出
+    clearInterval(updateTimer);
+    try { destroyEvents(); } catch (_) {}
+    restoreTerminal();
+    process.exit(0);
+  }
+}, 1000);
+
+

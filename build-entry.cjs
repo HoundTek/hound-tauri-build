@@ -87,6 +87,7 @@ let tuiChild = null;
 let NO_TUI = false;   // --no-tui 参数强制禁用 TUI
 let END_TUI = false;  // --end-tui 构建结束后自动退出 TUI
 let RETRY = null;     // --retry <n> 全局重试次数覆盖
+let SKIP = new Set(); // --skip <id...> 要跳过的任务 ID 集合
 
 /** @returns {boolean} */
 function isTuiAlive() {
@@ -337,9 +338,13 @@ async function runWithTuiOrFallback(targetIds, opts = {}) {
   const tuiAdapter = createTuiAdapter();
   const collector = createCollector(tuiAdapter);
 
-  // 监听 TUI 退出 → 设置中止信号
-  tuiSock.on('close', () => { abort.signaled = true; });
-  tuiSock.on('error', () => { abort.signaled = true; });
+  // 监听 TUI 退出 → 设置中止信号。
+  // 仅用户主动退出（exit 0）时中止构建；TUI 崩溃（非 0，如渲染异常）不中止，
+  // 让任务继续完成，避免误杀正常构建。
+  tuiChild.on('exit', (code) => {
+    if (code === 0) abort.signaled = true;
+  });
+  tuiSock.on('error', () => {});
 
   const ok = await executeResolved(targetIds, 'tui', collector.cb, abort, retry);
   // --end-tui：构建已结束，让 TUI 短暂展示结果后自动退出
@@ -369,7 +374,17 @@ async function executeResolved(targetIds, mode, cb, abort, retry) {
     return false;
   }
 
-  return executeTasks(ordered, mode, cb, abort, retry);
+  // --skip：警告跳过了不存在的任务 ID
+  if (SKIP.size > 0) {
+    const planned = new Set(ordered.map((t) => t.id));
+    for (const id of SKIP) {
+      if (!planned.has(id)) {
+        console.warn(`[warn] --skip: task "${id}" is not part of this build, ignored`);
+      }
+    }
+  }
+
+  return executeTasks(ordered, mode, cb, abort, retry, SKIP);
 }
 
 // ============================================================
@@ -388,6 +403,7 @@ function showHelp() {
   console.log('  --no-tui                  - Disable TUI mode, use inline output');
   console.log('  --end-tui                 - Auto-exit TUI when build finishes');
   console.log('  --retry <n>               - Override retry count for failed tasks (default 3)');
+  console.log('  --skip <id[,id...]>       - Skip specified tasks (dependents still run)');
   console.log();
   console.log('Platforms:');
   console.log('  desktop, win, mac, mac-universal, linux, android, ios');
@@ -396,6 +412,7 @@ function showHelp() {
   console.log('  htb build win linux');
   console.log('  htb build:win linux:init test');
   console.log('  htb build linux --retry 1 --end-tui');
+  console.log('  htb build:win --skip icon:win');
 }
 
 // ============================================================
@@ -434,6 +451,25 @@ function parseArgs() {
         process.exit(1);
       }
       RETRY = v;
+      continue;
+    }
+    if (a === '--skip') {
+      const v = args[++i];
+      if (!v) {
+        console.error('Invalid --skip: missing task ids');
+        process.exit(1);
+      }
+      for (const id of v.split(',')) {
+        const t = id.trim();
+        if (t) SKIP.add(t);
+      }
+      continue;
+    }
+    if (a.startsWith('--skip=')) {
+      for (const id of a.slice('--skip='.length).split(',')) {
+        const t = id.trim();
+        if (t) SKIP.add(t);
+      }
       continue;
     }
     positional.push(a);
@@ -505,7 +541,8 @@ async function main() {
       console.error('Available:', Object.keys(DEV_SETUP_TASKS).join(', '));
       process.exit(1);
     }
-    const ok = await runWithTuiOrFallback(setupTasks);
+    // dev 是长运行命令：setup 完成后必须自动退出 TUI，让 tauri dev 接管终端
+    const ok = await runWithTuiOrFallback(setupTasks, { endTui: true });
     if (!ok) { process.exit(1); return; }
 
     // 依赖任务完成后，spawn 长期运行的 tauri dev

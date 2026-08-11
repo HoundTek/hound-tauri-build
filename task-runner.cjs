@@ -531,7 +531,7 @@ async function executeOneTask(task, mode, cb, taskId, abort, retryOverride) {
  * @param {number} [retryOverride] - CLI 传入的全局重试次数覆盖
  * @returns {Promise<boolean>}
  */
-async function executeTasksSequential(taskList, mode, cb, abort, retryOverride) {
+async function executeTasksSequential(taskList, mode, cb, abort, retryOverride, skipSet) {
   if (cb) {
     cb.onInit(taskList.map((t) => ({ id: t.id, description: t.description, dependsOn: t.dependsOn })));
   }
@@ -548,6 +548,13 @@ async function executeTasksSequential(taskList, mode, cb, abort, retryOverride) 
     }
 
     const task = taskList[i];
+
+    // --skip：跳过指定任务（视为成功，解锁依赖），不执行
+    if (skipSet && skipSet.has(task.id)) {
+      if (cb) cb.onStatus(task.id, 'skipped');
+      continue;
+    }
+
     const start = Date.now();
     if (cb) cb.onStatus(task.id, 'running');
     const ok = await executeOneTask(task, mode, cb, task.id, abort, retryOverride);
@@ -579,7 +586,7 @@ async function executeTasksSequential(taskList, mode, cb, abort, retryOverride) 
  * @param {{ signaled: boolean }} [abort] - 外部中止信号
  * @returns {Promise<boolean>}
  */
-async function executeTasksParallel(taskList, mode, cb, abort) {
+async function executeTasksParallel(taskList, mode, cb, abort, retryOverride, skipSet) {
   cb.onInit(taskList.map((t) => ({ id: t.id, description: t.description, dependsOn: t.dependsOn })));
 
   const dag = new TaskDAG(taskList);
@@ -611,6 +618,21 @@ async function executeTasksParallel(taskList, mode, cb, abort) {
       cb.onExit(false);
       resolveDone();
       return;
+    }
+
+    // 先消费所有可跳过的任务（动态：跳过会解锁新的可跳过任务）
+    let skipProgress = true;
+    while (skipProgress) {
+      skipProgress = false;
+      for (const id of [...ready]) {
+        const node = dag.nodes.get(id);
+        if (!(skipSet && skipSet.has(node.task.id))) continue;
+        ready.delete(id);
+        completed.add(id);
+        cb.onStatus(node.task.id, 'skipped');
+        for (const uid of dag.onDone(id)) ready.add(uid);
+        skipProgress = true;
+      }
     }
 
     for (const id of [...ready]) {
@@ -684,13 +706,14 @@ async function executeTasksParallel(taskList, mode, cb, abort) {
  * @param {RunCallbacks} [tuiCallbacks] - TUI 模式回调
  * @param {{ signaled: boolean }} [abort] - 外部中止信号
  * @param {number} [retryOverride] - CLI 传入的全局重试次数覆盖
+ * @param {Set<string>} [skipSet] - 要跳过的任务 ID 集合
  * @returns {Promise<boolean>} 是否全部成功
  */
-async function executeTasks(taskList, mode, tuiCallbacks, abort, retryOverride) {
+async function executeTasks(taskList, mode, tuiCallbacks, abort, retryOverride, skipSet) {
   if (mode === 'tui' && tuiCallbacks) {
-    return executeTasksParallel(taskList, mode, tuiCallbacks, abort, retryOverride);
+    return executeTasksParallel(taskList, mode, tuiCallbacks, abort, retryOverride, skipSet);
   }
-  return executeTasksSequential(taskList, mode, tuiCallbacks || null, abort, retryOverride);
+  return executeTasksSequential(taskList, mode, tuiCallbacks || null, abort, retryOverride, skipSet);
 }
 
 // ============================================================

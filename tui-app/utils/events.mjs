@@ -1,6 +1,8 @@
 // 事件系统：统一捕获 keyboard + mouse 事件并分发
 // 架构：双路径输入（data + readable），手动解析，无 readline 依赖
 
+import { updateTerminalSize } from './terminal-size.mjs';
+
 const handlers = { key: [], mouse: [], click: [], scroll: [], resize: [] };
 let stdin = null;
 let dataHandler = null;
@@ -251,14 +253,18 @@ export function initEvents(opts = {}) {
     resizeRegistered = true;
     process.stdout.on('resize', () => {
       const { rows, columns } = process.stdout;
+      if (Number.isInteger(rows) && rows > 0 && Number.isInteger(columns) && columns > 0) {
+        updateTerminalSize(rows, columns);
+      }
       emit('resize', { rows, columns });
     });
   }
 }
 
 export function destroyEvents() {
-  process.stdout.write('\x1b[?1002l');
+  try { process.stdout.write('\x1b[?1002l'); } catch (_) {}
   if (stdin) {
+    try { stdin.setRawMode?.(false); } catch (_) {}
     if (dataHandler) stdin.removeListener('data', dataHandler);
   }
   dataHandler = null;
