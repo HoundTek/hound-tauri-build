@@ -6,5 +6,5 @@ module.exports = {
   description: 'icon linux',
   dependsOn: [],
   conflicts: ['resource:tauri-cli'],
-  run: { cmd: `${GEN_CMD} linux --phase=generate` },
+  run: { cmd: `${GEN_CMD} linux` },
 };

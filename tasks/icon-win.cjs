@@ -6,5 +6,5 @@ module.exports = {
   description: 'icon win',
   dependsOn: [],
   conflicts: ['resource:tauri-cli'],
-  run: { cmd: `${GEN_CMD} win --phase=generate` },
+  run: { cmd: `${GEN_CMD} win` },
 };

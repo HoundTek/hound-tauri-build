@@ -29,6 +29,7 @@ npm install -D hound-tauri-build
 - Node.js >= 18
 - `@tauri-apps/cli` ^2.0.0（peer dependency）
 - Rust / Android SDK / Xcode 等对应平台的 Tauri 构建依赖
+- [`cross`](https://github.com/cross-rs/cross) + Docker（桌面端构建通过 `--runner cross` 交叉编译，同平台时 cross 自动回退到原生 cargo）
 
 ## 快速开始
 
@@ -70,16 +71,36 @@ your-tauri-project/
 ### 构建相关
 
 ```bash
-# 完整构建（含图标生成）
-htb build <platform>
-htb ship <platform>       # 先跑测试，再构建
+# 完整构建（含图标生成），支持多平台 / 任务编排
+htb build <platform...>
+htb ship <platform...>     # 先跑测试，再构建
 
 # 快速构建（跳过图标和依赖任务）
-htb build-quick <platform>
+htb build-quick <platform...>
 
 # 开发模式（生成图标后启动 tauri dev）
 htb dev <platform>
 ```
+
+### 多任务编排
+
+平台名和任务 ID 可以混用，任意顺序编排：
+
+```bash
+# 多平台
+htb build win linux
+
+# 任务 ID 直接编排（含依赖自动解析）
+htb build:win linux:init test
+
+# 平台 + 任务 ID 混用
+htb build win linux:init
+
+# 图标多平台
+htb icon mac win
+```
+
+> 重复的任务会自动去重；依赖关系（如 `build:win` → `icon:win`）会自动解析。
 
 ### 辅助工具
 
@@ -117,6 +138,8 @@ htb-icon all
 | 选项 | 说明 |
 |------|------|
 | `--no-tui` | 禁用 TUI，直接用终端文本输出 |
+| `--end-tui` | 构建完成后短暂展示结果，自动退出 TUI（适合脚本/CI） |
+| `--retry <n>` | 覆盖失败任务的重试次数（默认 3，`--retry 0` 关闭重试） |
 
 ## 声明式任务系统
 
@@ -128,14 +151,25 @@ htb-icon all
 ship:*     → test → build:*
 build:win  → icon:win
 build:mac  → icon:mac
-build:linux → icon:linux
+build:linux → icon:linux → linux:init
 build:android → icon:android → android:init
 build:ios  → icon:ios → ios:init
 
 冲突资源：
-  resource:cargo-build   — 防止多个 Rust 编译任务并行
+  resource:cross-build   — 防止多个 Rust 编译任务并行
   resource:tauri-cli     — 防止多个 Tauri CLI 任务并行
 ```
+
+### Linux 交叉编译
+
+Linux 构建使用 [`cross`](https://github.com/cross-rs/cross) 通过 Docker 容器交叉编译，解决了在 Windows/macOS 上编译 GTK/WebKit2GTK 依赖的问题。
+
+`linux:init` 任务会自动将以下模板复制到目标项目的 `src-tauri/` 目录（已存在则跳过，不覆盖自定义配置）：
+
+- `Cross.toml` — 告诉 `cross` 为 `x86_64-unknown-linux-gnu` 目标使用自定义镜像
+- `Dockerfile.cross-linux` — 基于 cross 官方目标镜像，预装 `libwebkit2gtk-4.1-dev` 等 Tauri 依赖
+
+首次构建时 Docker 会自动构建此镜像（之后缓存复用）。如需自定义 Linux 依赖，直接编辑 `src-tauri/Dockerfile.cross-linux` 即可。
 
 ### 编写自定义任务
 
@@ -158,13 +192,16 @@ module.exports = {
 
 ```js
 run: {
-  fn: async (log) => {
-    log('开始处理...');
+  fn: () => {
+    console.log('开始处理...');
     // 你的逻辑
-    log('处理完成');
+    console.log('处理完成');
+    return true; // 返回 false 视为失败（触发重试）
   },
 }
 ```
+
+> `console.log` / `console.warn` / `console.error` 的输出会自动转发到 TUI 日志面板。
 
 ## 可编程 API
 

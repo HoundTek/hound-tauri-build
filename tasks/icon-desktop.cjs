@@ -6,5 +6,5 @@ module.exports = {
   description: 'icon desktop',
   dependsOn: [],
   conflicts: ['resource:tauri-cli'],
-  run: { cmd: `${GEN_CMD} desktop --phase=generate` },
+  run: { cmd: `${GEN_CMD} desktop` },
 };

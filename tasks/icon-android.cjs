@@ -6,5 +6,5 @@ module.exports = {
   description: 'icon android',
   dependsOn: [],
   conflicts: ['resource:tauri-cli'],
-  run: { cmd: `${GEN_CMD} android --phase=generate` },
+  run: { cmd: `${GEN_CMD} android` },
 };

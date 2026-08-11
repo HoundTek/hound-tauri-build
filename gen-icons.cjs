@@ -142,7 +142,7 @@ function copyPhase(platform) {
     }, null, 2))
   }
 
-  // 2) 移动端额外输出到 src-tauri/icons/（cargo proc macro 编译需要）
+  // 2) 移动端额外输出到 src-tauri/icons/（cross proc macro 编译需要）
   if (platform === 'android' || platform === 'ios') {
     const iconsDir = path.join(rootDir, 'src-tauri/icons')
     console.log('Also to:', path.relative(rootDir, iconsDir))

@@ -22,12 +22,13 @@ function configureAndroidSigning() {
     fs.mkdirSync(path.dirname(keystoreDest), { recursive: true });
     fs.copyFileSync(keystoreSrc, keystoreDest);
   } else {
-    console.warn('Warning: keystore.properties not found in keys/');
-    return false;
+    // keystore 不存在时优雅跳过签名配置，允许无签名构建（如开发调试）
+    console.warn('Warning: keystore.properties not found in keys/ — skipping signing (build will be unsigned)');
+    return true;
   }
 
   if (!fs.existsSync(buildGradlePath)) {
-    console.warn('Warning: build.gradle.kts not found');
+    console.warn('Warning: build.gradle.kts not found at ' + path.relative(ROOT_DIR, buildGradlePath) + ' — did android:init run successfully?');
     return false;
   }
 

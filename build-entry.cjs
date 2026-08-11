@@ -70,12 +70,12 @@ const DEV_SETUP_TASKS = {
 /** dev 命令的长运行进程 */
 const CP = `node "${path.join(__dirname, 'gen-icons.cjs')}"`;
 const DEV_CMD = {
-  desktop: `${CP} desktop --phase=copy && tauri dev`,
-  mac: `${CP} mac --phase=copy && tauri dev`,
-  win: `${CP} win --phase=copy && tauri dev`,
-  linux: `${CP} linux --phase=copy && tauri dev`,
-  android: `${CP} android --phase=copy && tauri android dev`,
-  ios: `${CP} ios --phase=copy && tauri ios dev`,
+  desktop: 'tauri dev',
+  mac: 'tauri dev',
+  win: 'tauri dev',
+  linux: 'tauri dev',
+  android: 'tauri android dev',
+  ios: 'tauri ios dev',
 };
 
 // ============================================================
@@ -84,7 +84,9 @@ const DEV_CMD = {
 
 let tuiSock = null;
 let tuiChild = null;
-let NO_TUI = false; // --no-tui 参数强制禁用 TUI
+let NO_TUI = false;   // --no-tui 参数强制禁用 TUI
+let END_TUI = false;  // --end-tui 构建结束后自动退出 TUI
+let RETRY = null;     // --retry <n> 全局重试次数覆盖
 
 /** @returns {boolean} */
 function isTuiAlive() {
@@ -298,15 +300,19 @@ function printSummary(summary) {
 /**
  * 尝试用 TUI 执行目标任务，失败则回退内联
  * @param {string[]} targetIds
+ * @param {{ retry?: number, endTui?: boolean }} [opts] - retry: 全局重试次数；endTui: 构建后自动退出 TUI
  * @returns {Promise<boolean>}
  */
-async function runWithTuiOrFallback(targetIds) {
+async function runWithTuiOrFallback(targetIds, opts = {}) {
+  const retry = opts.retry != null ? opts.retry : RETRY;
+  const endTui = opts.endTui != null ? opts.endTui : END_TUI;
+
   // 终端过小时不跳过 TUI，子进程内会渲染 SizeWarning 提示页 + resize 自动恢复
   if (!process.stdout.isTTY || NO_TUI) {
     if (NO_TUI) { /* 用户主动禁用，不提示 */ }
     else if (!process.stdout.isTTY) { process.stderr.write('[info] 非 TTY 环境，回退内联模式\n'); }
     const collector = createCollector(null);
-    const ok = await executeResolved(targetIds, 'inline', collector.cb);
+    const ok = await executeResolved(targetIds, 'inline', collector.cb, undefined, retry);
     printSummary(collector.getSummary());
     return ok;
   }
@@ -314,14 +320,14 @@ async function runWithTuiOrFallback(targetIds) {
   // 尝试启动 TUI
   try { await startTui(); } catch (_) {
     const collector = createCollector(null);
-    const ok = await executeResolved(targetIds, 'inline', collector.cb);
+    const ok = await executeResolved(targetIds, 'inline', collector.cb, undefined, retry);
     printSummary(collector.getSummary());
     return ok;
   }
 
   if (!isTuiAlive()) {
     const collector = createCollector(null);
-    const ok = await executeResolved(targetIds, 'inline', collector.cb);
+    const ok = await executeResolved(targetIds, 'inline', collector.cb, undefined, retry);
     printSummary(collector.getSummary());
     return ok;
   }
@@ -335,7 +341,9 @@ async function runWithTuiOrFallback(targetIds) {
   tuiSock.on('close', () => { abort.signaled = true; });
   tuiSock.on('error', () => { abort.signaled = true; });
 
-  const ok = await executeResolved(targetIds, 'tui', collector.cb, abort);
+  const ok = await executeResolved(targetIds, 'tui', collector.cb, abort, retry);
+  // --end-tui：构建已结束，让 TUI 短暂展示结果后自动退出
+  if (endTui && isTuiAlive()) sendTui({ type: 'auto-exit' });
   if (isTuiAlive()) await waitTuiExit();
   // 等待 TUI 的 stdout 缓冲区完全刷新，避免 printSummary 输出交叠
   await new Promise((r) => setTimeout(r, 200));
@@ -348,9 +356,11 @@ async function runWithTuiOrFallback(targetIds) {
  * @param {string[]} targetIds
  * @param {'tui'|'inline'} mode
  * @param {RunCallbacks} cb
+ * @param {{ signaled: boolean }} [abort]
+ * @param {number} [retry] - 全局重试次数覆盖
  * @returns {Promise<boolean>}
  */
-async function executeResolved(targetIds, mode, cb, abort) {
+async function executeResolved(targetIds, mode, cb, abort, retry) {
   const registry = loadTaskRegistry();
   const { ordered, errors } = resolveTaskGraph(targetIds, registry);
 
@@ -359,7 +369,7 @@ async function executeResolved(targetIds, mode, cb, abort) {
     return false;
   }
 
-  return executeTasks(ordered, mode, cb, abort);
+  return executeTasks(ordered, mode, cb, abort, retry);
 }
 
 // ============================================================
@@ -368,17 +378,85 @@ async function executeResolved(targetIds, mode, cb, abort) {
 
 function showHelp() {
   console.log('Commands:');
-  console.log('  dev [platform]          - Start development server');
-  console.log('  build [platform]        - Build for specified platform');
-  console.log('  build-quick [platform]  - Build only (skip deps/icons)');
-  console.log('  ship [platform]         - Run tests + build for platform');
-  console.log('  icon [platform|all]     - Generate icons');
+  console.log('  dev [platform]            - Start development server');
+  console.log('  build [platform|task...]  - Build for platforms or orchestrate task IDs');
+  console.log('  build-quick [platform...] - Build only (skip deps/icons)');
+  console.log('  ship [platform|task...]   - Run tests + build for platform');
+  console.log('  icon [platform|all|task...] - Generate icons');
   console.log();
   console.log('Options:');
-  console.log('  --no-tui                - Disable TUI mode, use inline output');
+  console.log('  --no-tui                  - Disable TUI mode, use inline output');
+  console.log('  --end-tui                 - Auto-exit TUI when build finishes');
+  console.log('  --retry <n>               - Override retry count for failed tasks (default 3)');
   console.log();
   console.log('Platforms:');
   console.log('  desktop, win, mac, mac-universal, linux, android, ios');
+  console.log();
+  console.log('Examples:');
+  console.log('  htb build win linux');
+  console.log('  htb build:win linux:init test');
+  console.log('  htb build linux --retry 1 --end-tui');
+}
+
+// ============================================================
+//  Main
+// ============================================================
+
+// ============================================================
+//  参数解析
+// ============================================================
+
+/**
+ * 解析 CLI 参数：提取 flags，返回位置参数
+ * @returns {string[]} 位置参数（不含 flags）
+ */
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const positional = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--no-tui') { NO_TUI = true; continue; }
+    if (a === '--end-tui') { END_TUI = true; continue; }
+    if (a === '--retry') {
+      const v = Number(args[++i]);
+      if (!Number.isInteger(v) || v < 0) {
+        console.error('Invalid --retry value: must be a non-negative integer');
+        process.exit(1);
+      }
+      RETRY = v;
+      continue;
+    }
+    if (a.startsWith('--retry=')) {
+      const v = Number(a.slice('--retry='.length));
+      if (!Number.isInteger(v) || v < 0) {
+        console.error('Invalid --retry value: must be a non-negative integer');
+        process.exit(1);
+      }
+      RETRY = v;
+      continue;
+    }
+    positional.push(a);
+  }
+
+  return positional;
+}
+
+/**
+ * 将位置参数展开为目标任务 ID 列表。
+ * 平台名 → 命令映射的任务；其余 → 视为任务 ID。
+ * @param {string} command - build / build-quick / ship
+ * @param {string[]} args - 位置参数
+ * @returns {string[]} 目标任务 ID（去重）
+ */
+function expandTargets(command, args) {
+  const targets = [];
+  for (const arg of args) {
+    const mapping = COMMAND_TASKS[command][arg];
+    if (mapping) targets.push(...mapping);
+    else targets.push(arg); // 任务 ID（含依赖解析，未知任务由 resolveTaskGraph 报错）
+  }
+  return [...new Set(targets)];
 }
 
 // ============================================================
@@ -386,37 +464,41 @@ function showHelp() {
 // ============================================================
 
 async function main() {
-  const args = process.argv.slice(2).filter(a => {
-    if (a === '--no-tui') { NO_TUI = true; return false; }
-    return true;
-  });
+  const args = parseArgs();
   const command = args[0];
-  const platform = args[1] || 'desktop';
+  const rest = args.slice(1);
 
   if (!command || ['help', '--help', '-h'].includes(command)) {
     showHelp();
     return;
   }
 
+  // ---- 任务 ID 编排模式：命令本身也是任务 ID（含 ':'）----
+  // 例：htb build:win linux:init test
+  if (command.includes(':')) {
+    const targetIds = [...new Set([command, ...rest])];
+    const ok = await runWithTuiOrFallback(targetIds);
+    process.exit(ok ? 0 : 1);
+    return;
+  }
+
   // ---- icon ----
   if (command === 'icon') {
-    let targetIds;
-    if (platform === 'all') {
-      targetIds = ICON_PLATFORMS.map(p => `icon:${p}`);
-    } else if (ICON_PLATFORMS.includes(platform)) {
-      targetIds = [`icon:${platform}`];
-    } else {
-      console.error('Unknown icon platform:', platform);
-      console.error('Available:', ICON_PLATFORMS.join(', ') + ', all');
-      process.exit(1);
+    const platforms = rest.length > 0 ? rest : ['desktop'];
+    const targetIds = [];
+    for (const p of platforms) {
+      if (p === 'all') targetIds.push(...ICON_PLATFORMS.map((x) => `icon:${x}`));
+      else if (ICON_PLATFORMS.includes(p)) targetIds.push(`icon:${p}`);
+      else targetIds.push(p); // 直接任务 ID
     }
-    const ok = await runWithTuiOrFallback(targetIds);
+    const ok = await runWithTuiOrFallback([...new Set(targetIds)]);
     process.exit(ok ? 0 : 1);
     return;
   }
 
   // ---- dev ----
   if (command === 'dev') {
+    const platform = rest[0] || 'desktop';
     const setupTasks = DEV_SETUP_TASKS[platform];
     if (!setupTasks) {
       console.error('Unknown platform:', platform);
@@ -433,13 +515,18 @@ async function main() {
 
   // ---- build / build-quick / ship ----
   if (command === 'build' || command === 'build-quick' || command === 'ship') {
-    const mapping = COMMAND_TASKS[command][platform];
-    if (!mapping) {
-      console.error('Unknown platform:', platform);
-      console.error('Available:', Object.keys(COMMAND_TASKS[command]).join(', '));
+    const raw = rest.length > 0 ? rest : ['desktop'];
+
+    // 校验：至少一个参数是有效平台或已注册任务，否则给出友好提示
+    const registry = loadTaskRegistry();
+    const invalid = raw.filter((a) => !COMMAND_TASKS[command][a] && !registry.has(a));
+    if (invalid.length === raw.length) {
+      console.error('Unknown platform or task:', raw.join(', '));
+      console.error('Platforms:', Object.keys(COMMAND_TASKS[command]).join(', '));
       process.exit(1);
     }
-    const ok = await runWithTuiOrFallback(mapping);
+
+    const ok = await runWithTuiOrFallback(expandTargets(command, raw));
     process.exit(ok ? 0 : 1);
     return;
   }

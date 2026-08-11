@@ -182,5 +182,9 @@ function handleMessage(msg) {
       onBuildExit(msg.ok);
       requestRedraw();
       break;
+    case 'auto-exit':
+      // --end-tui：构建已结束，短暂展示最终结果后自动退出
+      setTimeout(cleanupAndExit, 1500);
+      break;
   }
 }

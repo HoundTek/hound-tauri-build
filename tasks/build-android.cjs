@@ -5,6 +5,6 @@ module.exports = {
   id: 'build:android',
   description: 'build android',
   dependsOn: ['icon:android', 'android:signing'],
-  conflicts: ['resource:cargo-build'],
-  run: { cmd: `${CP} android --phase=copy && tauri android build` },
+  conflicts: ['resource:cross-build'],
+  run: { cmd: 'tauri android build' },
 };

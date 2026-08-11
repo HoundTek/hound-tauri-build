@@ -5,6 +5,6 @@ module.exports = {
   id: 'build:mac',
   description: 'build mac',
   dependsOn: ['icon:mac'],
-  conflicts: ['resource:cargo-build'],
-  run: { cmd: `${CP} mac --phase=copy && tauri build --target x86_64-apple-darwin` },
+  conflicts: ['resource:cross-build'],
+  run: { cmd: 'tauri build --runner cross --target x86_64-apple-darwin' },
 };

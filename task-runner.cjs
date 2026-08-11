@@ -450,15 +450,17 @@ function runCmdInherit(cmd) {
 /**
  * 执行单个任务（含自动重试）
  * 失败时按指数退避重试，最多 retry 次（默认 3）。
+ * 优先级：retryOverride（CLI --retry）> task.retry（任务自定义）> DEFAULT_MAX_RETRIES。
  * @param {object} task - 任务定义
  * @param {'tui'|'inline'} mode
  * @param {RunCallbacks} [cb]
  * @param {string} [taskId] - 任务 ID，用于日志关联
  * @param {{ signaled: boolean }} [abort] - 外部中止信号
+ * @param {number} [retryOverride] - CLI 传入的全局重试次数覆盖
  * @returns {Promise<boolean>}
  */
-async function executeOneTask(task, mode, cb, taskId, abort) {
-  const maxRetries = task.retry != null ? task.retry : DEFAULT_MAX_RETRIES;
+async function executeOneTask(task, mode, cb, taskId, abort, retryOverride) {
+  const maxRetries = retryOverride != null ? retryOverride : (task.retry != null ? task.retry : DEFAULT_MAX_RETRIES);
 
   // 包装回调：所有 onLog 自动归属到当前任务
   const wcb = cb ? {
@@ -482,7 +484,26 @@ async function executeOneTask(task, mode, cb, taskId, abort) {
 
     let ok;
     if (task.run.fn) {
-      try { ok = task.run.fn() !== false; } catch (_) { ok = false; }
+      // 捕获 run.fn 的 console 输出，转发到 TUI 日志（否则 console.warn 等不会出现在 TUI 中）
+      const origWarn = console.warn;
+      const origLog = console.log;
+      const origError = console.error;
+      if (wcb) {
+        const fwd = (...args) => wcb.onLog(args.map((a) => (typeof a === 'string' ? a : String(a))).join(' '));
+        console.warn = fwd;
+        console.log = fwd;
+        console.error = fwd;
+      }
+      try {
+        ok = task.run.fn() !== false;
+      } catch (e) {
+        if (wcb) wcb.onLog(String((e && e.stack) || e));
+        ok = false;
+      } finally {
+        console.warn = origWarn;
+        console.log = origLog;
+        console.error = origError;
+      }
     } else if (task.run.cmd) {
       ok = mode === 'tui'
         ? await runCmdSilent(task.run.cmd, wcb, abort)
@@ -507,9 +528,10 @@ async function executeOneTask(task, mode, cb, taskId, abort) {
  * @param {'tui'|'inline'} mode
  * @param {RunCallbacks} [cb]
  * @param {{ signaled: boolean }} [abort] - 外部中止信号
+ * @param {number} [retryOverride] - CLI 传入的全局重试次数覆盖
  * @returns {Promise<boolean>}
  */
-async function executeTasksSequential(taskList, mode, cb, abort) {
+async function executeTasksSequential(taskList, mode, cb, abort, retryOverride) {
   if (cb) {
     cb.onInit(taskList.map((t) => ({ id: t.id, description: t.description, dependsOn: t.dependsOn })));
   }
@@ -527,9 +549,8 @@ async function executeTasksSequential(taskList, mode, cb, abort) {
 
     const task = taskList[i];
     const start = Date.now();
-
     if (cb) cb.onStatus(task.id, 'running');
-    const ok = await executeOneTask(task, mode, cb, task.id, abort);
+    const ok = await executeOneTask(task, mode, cb, task.id, abort, retryOverride);
     const elapsed = Date.now() - start;
 
     if (ok) {
@@ -605,7 +626,7 @@ async function executeTasksParallel(taskList, mode, cb, abort) {
 
       const start = Date.now();
 
-      const promise = executeOneTask(task, mode, cb, task.id, abort).then((ok) => {
+      const promise = executeOneTask(task, mode, cb, task.id, abort, retryOverride).then((ok) => {
         // 中止后不再处理子进程结束事件
         if (finished) return;
 
@@ -661,13 +682,15 @@ async function executeTasksParallel(taskList, mode, cb, abort) {
  * @param {Array} taskList - 拓扑排序后的任务定义数组
  * @param {'tui'|'inline'} mode - 执行模式
  * @param {RunCallbacks} [tuiCallbacks] - TUI 模式回调
+ * @param {{ signaled: boolean }} [abort] - 外部中止信号
+ * @param {number} [retryOverride] - CLI 传入的全局重试次数覆盖
  * @returns {Promise<boolean>} 是否全部成功
  */
-async function executeTasks(taskList, mode, tuiCallbacks, abort) {
+async function executeTasks(taskList, mode, tuiCallbacks, abort, retryOverride) {
   if (mode === 'tui' && tuiCallbacks) {
-    return executeTasksParallel(taskList, mode, tuiCallbacks, abort);
+    return executeTasksParallel(taskList, mode, tuiCallbacks, abort, retryOverride);
   }
-  return executeTasksSequential(taskList, mode, tuiCallbacks || null, abort);
+  return executeTasksSequential(taskList, mode, tuiCallbacks || null, abort, retryOverride);
 }
 
 // ============================================================

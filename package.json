@@ -1,6 +1,6 @@
 {
   "name": "hound-tauri-build",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Hound Tauri 构建系统 - 声明式任务编排与 TUI 构建工具",
   "type": "commonjs",
   "main": "index.js",
@@ -14,6 +14,7 @@
     "*.cjs",
     "icon-config.json",
     "tasks/",
+    "templates/",
     "tui-app/"
   ],
   "keywords": [

@@ -5,6 +5,6 @@ module.exports = {
   id: 'build:win',
   description: 'build win',
   dependsOn: ['icon:win'],
-  conflicts: ['resource:cargo-build'],
-  run: { cmd: `${CP} win --phase=copy && tauri build` },
+  conflicts: ['resource:cross-build'],
+  run: { cmd: 'tauri build --runner cross' },
 };
