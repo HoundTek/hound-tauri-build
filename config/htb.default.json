@@ -58,7 +58,10 @@
     "platforms": {
       "win": {
         "dir": "win",
-        "patterns": ["src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe"]
+        "patterns": [
+          "src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe",
+          "src-tauri/target/x86_64-pc-windows-gnu/release/bundle/msi/*.msi"
+        ]
       },
       "linux": {
         "dir": "linux",
@@ -139,8 +142,8 @@
     }
   },
   "tasks": {
-    "build:win": { "cmd": "rm -rf src-tauri/.htb-frontend-dist && cp -r src src-tauri/.htb-frontend-dist && tauri build --runner cross --target x86_64-pc-windows-gnu --bundles nsis --config '{\"build\":{\"frontendDist\":\"./.htb-frontend-dist\"}}'; code=$?; rm -rf src-tauri/.htb-frontend-dist; exit $code" },
-    "build-quick:win": { "cmd": "rm -rf src-tauri/.htb-frontend-dist && cp -r src src-tauri/.htb-frontend-dist && tauri build --runner cross --target x86_64-pc-windows-gnu --bundles nsis --config '{\"build\":{\"frontendDist\":\"./.htb-frontend-dist\"}}'; code=$?; rm -rf src-tauri/.htb-frontend-dist; exit $code" },
+    "build:win": { "cmd": "rm -rf src-tauri/.htb-frontend-dist && cp -r src src-tauri/.htb-frontend-dist && tauri build --runner cross --target x86_64-pc-windows-gnu --bundles nsis msi --config '{\"build\":{\"frontendDist\":\"./.htb-frontend-dist\"}}'; code=$?; rm -rf src-tauri/.htb-frontend-dist; exit $code" },
+    "build-quick:win": { "cmd": "rm -rf src-tauri/.htb-frontend-dist && cp -r src src-tauri/.htb-frontend-dist && tauri build --runner cross --target x86_64-pc-windows-gnu --bundles nsis msi --config '{\"build\":{\"frontendDist\":\"./.htb-frontend-dist\"}}'; code=$?; rm -rf src-tauri/.htb-frontend-dist; exit $code" },
     "build:mac": { "cmd": "tauri build --target x86_64-apple-darwin --bundles app" },
     "build-quick:mac": { "cmd": "tauri build --bundles app" },
     "build:mac-universal": { "cmd": "tauri build --target universal-apple-darwin --bundles app" },

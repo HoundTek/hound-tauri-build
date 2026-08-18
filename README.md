@@ -207,7 +207,7 @@ dist/
   "artifacts": {
     "output": "dist",
     "platforms": {
-      "win": { "dir": "win", "patterns": ["src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe"] },
+      "win": { "dir": "win", "patterns": ["src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe", "src-tauri/target/x86_64-pc-windows-gnu/release/bundle/msi/*.msi"] },
       "android": { "dir": "android", "patterns": ["src-tauri/gen/android/app/build/outputs/apk/**/*.apk"] }
     }
   }
