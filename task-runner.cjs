@@ -9,9 +9,22 @@
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { getConfig } = require('./config.cjs');
 
 const ROOT_DIR = process.env.HOUND_BUILD_ROOT || path.resolve(__dirname, '../..');
 const TASKS_DIR = path.join(__dirname, 'tasks');
+
+/**
+ * 构造子进程环境：注入项目 node_modules/.bin 到 PATH（与 yarn/npm 行为一致），
+ * 使 `tauri` 等本地 CLI 在直接调用 htb 时也可用。
+ * @param {object} [extraEnv] - 额外覆盖（tasks.<id>.env）
+ * @returns {object}
+ */
+function buildChildEnv(extraEnv) {
+  const nodeBin = path.join(ROOT_DIR, 'node_modules', '.bin');
+  const PATH = [nodeBin, process.env.PATH].filter(Boolean).join(path.delimiter);
+  return { ...process.env, PATH, FORCE_COLOR: '1', ...(extraEnv || {}) };
+}
 
 // ============================================================
 //  TaskDAG — 有向无环依赖图
@@ -274,6 +287,17 @@ function loadTaskRegistry() {
     }
   }
 
+  // 应用统一配置（htb.config.json / --set）中的任务定义覆盖：tasks.<id>.{cmd,env,retry,dependsOn}
+  const taskOverrides = getConfig().tasks || {};
+  for (const [id, over] of Object.entries(taskOverrides)) {
+    const def = registry.get(id);
+    if (!def) continue;
+    if (over.cmd) def.run = { ...def.run, cmd: over.cmd };
+    if (over.env) def.run = { ...def.run, env: { ...(def.run.env || {}), ...over.env } };
+    if (over.retry !== undefined) def.retry = over.retry;
+    if (over.dependsOn) def.dependsOn = over.dependsOn;
+  }
+
   return registry;
 }
 
@@ -359,14 +383,17 @@ function resolveTaskGraph(targetIds, registry) {
 //  执行
 // ============================================================
 
-/** 最大并行任务数 */
-const MAX_CONCURRENT = 4;
+/** 最大并行任务数（统一配置 build.concurrency，默认 4） */
+const MAX_CONCURRENT = getConfig().build.concurrency;
 
-/** 默认最大重试次数 */
-const DEFAULT_MAX_RETRIES = 3;
+/** 默认最大重试次数（统一配置 build.retry，默认 3） */
+const DEFAULT_MAX_RETRIES = getConfig().build.retry;
 
-/** 重试基础延迟（ms），指数退避：delay * 2^(attempt-1) */
-const RETRY_BASE_DELAY = 1000;
+/** 重试基础延迟（ms），指数退避：delay * 2^(attempt-1)（统一配置 build.retryBaseDelay，默认 1000） */
+const RETRY_BASE_DELAY = getConfig().build.retryBaseDelay;
+
+/** 重试退避单次上限（统一配置 build.retryMaxDelay，默认 30000） */
+const RETRY_MAX_DELAY = getConfig().build.retryMaxDelay;
 
 /**
  * 执行回调接口
@@ -382,15 +409,16 @@ const RETRY_BASE_DELAY = 1000;
  * @param {string} cmd - shell 命令
  * @param {RunCallbacks} cb
  * @param {{ signaled: boolean }} [abort] - 外部中止信号，poll 检测到后 kill 子进程
+ * @param {object} [env] - 任务级环境变量覆盖（tasks.<id>.env）
  * @returns {Promise<boolean>}
  */
-function runCmdSilent(cmd, cb, abort) {
+function runCmdSilent(cmd, cb, abort, env) {
   return new Promise((resolve) => {
     const child = spawn(cmd, [], {
       cwd: ROOT_DIR,
       shell: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, FORCE_COLOR: '1' },
+      env: buildChildEnv(env),
     });
 
     // 监听 abort：轮询检测，信号到位立即杀子进程
@@ -432,15 +460,16 @@ function runCmdSilent(cmd, cb, abort) {
 /**
  * inherit stdio 执行命令（回退模式）
  * @param {string} cmd
+ * @param {object} [env] - 任务级环境变量覆盖（tasks.<id>.env）
  * @returns {Promise<boolean>}
  */
-function runCmdInherit(cmd) {
+function runCmdInherit(cmd, env) {
   return new Promise((resolve) => {
     const child = spawn(cmd, [], {
       cwd: ROOT_DIR,
       shell: true,
       stdio: 'inherit',
-      env: { ...process.env, FORCE_COLOR: '1' },
+      env: buildChildEnv(env),
     });
     child.on('close', (code) => resolve(code === 0));
     child.on('error', () => resolve(false));
@@ -474,7 +503,7 @@ async function executeOneTask(task, mode, cb, taskId, abort, retryOverride) {
     if (abort && abort.signaled) return false;
 
     if (attempt > 0) {
-      const delayMs = Math.min(RETRY_BASE_DELAY * Math.pow(2, attempt - 1), 30000);
+      const delayMs = Math.min(RETRY_BASE_DELAY * Math.pow(2, attempt - 1), RETRY_MAX_DELAY);
       if (wcb) {
         wcb.onLog(`[retry] ${task.description}: attempt ${attempt}/${maxRetries}, waiting ${delayMs / 1000}s...`);
       }
@@ -505,9 +534,10 @@ async function executeOneTask(task, mode, cb, taskId, abort, retryOverride) {
         console.error = origError;
       }
     } else if (task.run.cmd) {
+      const taskEnv = task.run.env || {};
       ok = mode === 'tui'
-        ? await runCmdSilent(task.run.cmd, wcb, abort)
-        : await runCmdInherit(task.run.cmd);
+        ? await runCmdSilent(task.run.cmd, wcb, abort, taskEnv)
+        : await runCmdInherit(task.run.cmd, taskEnv);
     } else {
       ok = true;
     }

@@ -6,5 +6,5 @@ module.exports = {
   description: 'build mac uni',
   dependsOn: ['icon:mac'],
   conflicts: ['resource:cross-build'],
-  run: { cmd: 'tauri build --runner cross --target universal-apple-darwin' },
+  run: { cmd: 'tauri build --target universal-apple-darwin --bundles app' },
 };

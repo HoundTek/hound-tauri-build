@@ -11,6 +11,8 @@
 ## 特性
 
 - **声明式任务系统** —— 每个任务一个 `.cjs` 文件，声明依赖、冲突资源、执行命令，零模板代码
+- **统一配置体系** —— 默认配置 + 项目 `htb.config.json` + 命令行 `--set <path>=<value>` 三级合并覆盖，任务/命令/图标/产物全部可配置
+- **产物统一收集** —— 构建完成后自动把各平台产物拷贝到 `dist/<platform>/`，一条命令交付所有安装包
 - **DAG 并行调度** —— 自动解析依赖图，拓扑排序，最多 4 任务并行，冲突资源自动串行化
 - **自定义 TUI 界面** —— 零依赖终端 UI，实时展示任务树、构建日志、进度统计，支持键盘/鼠标交互
 - **日志过滤与搜索** —— 按日志级别（success/warning/error/info/log）、任务、关键词实时过滤
@@ -30,6 +32,7 @@ npm install -D hound-tauri-build
 - `@tauri-apps/cli` ^2.0.0（peer dependency）
 - Rust / Android SDK / Xcode 等对应平台的 Tauri 构建依赖
 - [`cross`](https://github.com/cross-rs/cross) + Docker（桌面端构建通过 `--runner cross` 交叉编译，同平台时 cross 自动回退到原生 cargo）
+- `makensis`（macOS/Linux 上打包 Windows NSIS 安装包时需要，`brew install makensis`）
 
 ## 快速开始
 
@@ -72,11 +75,16 @@ your-tauri-project/
 
 ```bash
 # 完整构建（含图标生成），支持多平台 / 任务编排
+# 构建成功后自动把产物收集到 dist/<platform>/
 htb build <platform...>
-htb ship <platform...>     # 先跑测试，再构建
+htb ship <platform...>     # 先跑测试，再构建（同样自动收集产物）
 
-# 快速构建（跳过图标和依赖任务）
+# 快速构建（跳过图标和依赖任务，不收集产物）
 htb build-quick <platform...>
+
+# 单独收集已构建的产物（会先构建对应平台）
+htb build collect:win
+htb build collect:all
 
 # 开发模式（生成图标后启动 tauri dev）
 htb dev <platform>
@@ -117,6 +125,10 @@ htb-clean status                # 查看当前图标源状态
 # 图标工具（独立使用）
 htb-icon <platform>
 htb-icon all
+
+# iOS 模拟器安装（把 htb build ios --sim 的产物装到模拟器）
+node bin/hound-tauri-sim-install.js --list
+node bin/hound-tauri-sim-install.js [--project <dir>] [--launch] [--device <name|udid>]
 ```
 
 ### 支持的平台
@@ -140,6 +152,69 @@ htb-icon all
 | `--no-tui` | 禁用 TUI，直接用终端文本输出 |
 | `--end-tui` | 构建完成后短暂展示结果，自动退出 TUI（适合脚本/CI） |
 | `--retry <n>` | 覆盖失败任务的重试次数（默认 3，`--retry 0` 关闭重试） |
+| `--set <path>=<value>` | 运行时覆盖配置项（如 `--set artifacts.output=out`），优先级最高 |
+
+## 配置体系
+
+htb 的配置由三层合并而成（**项目级 > 用户级 > 默认**）：
+
+| 层级 | 位置 | 说明 |
+|------|------|------|
+| 默认 | `config/htb.default.json`（内置） | 任务、命令映射、图标、产物等默认值 |
+| 项目级 | 项目根 `htb.config.json` | 覆盖默认值，随仓库分发 |
+| 用户级 | `HTB_SET_OVERRIDES` 环境变量 | 覆盖项目级（机器级偏好） |
+| 运行时 | `--set <path>=<value>` | 最高优先级，仅当次生效 |
+
+```jsonc
+// htb.config.json（项目根）
+{
+  "ios": { "target": "sim", "sign": true },
+  "tui": { "logLimit": 20000 },
+  "tasks": {
+    "build:android": { "env": { "JAVA_HOME": "/Library/Java/..." } }
+  }
+}
+```
+
+任务定义的所有字段（`cmd` / `env` / `retry` / `dependsOn`）都可被覆盖，任务 ID 支持自定义（冒号分隔或任意命名，如 `build-win`）：
+
+```bash
+# 运行时覆盖任务命令
+htb build win --set 'tasks.build-win.cmd=tauri build --bundles msi'
+
+# 覆盖产物输出目录
+htb build all --set artifacts.output=release
+```
+
+## 产物收集
+
+构建完成后，产物自动统一拷贝到项目根 `dist/<platform>/` 目录：
+
+```
+dist/
+├── win/            app_setup.exe
+├── linux/          app 二进制
+├── mac/            App.app
+├── mac-universal/  App.app
+├── android/        app.apk + app.aab
+└── ios/            App.app
+```
+
+产物路径与输出目录通过 `artifacts` 配置控制，可随项目覆盖：
+
+```jsonc
+{
+  "artifacts": {
+    "output": "dist",
+    "platforms": {
+      "win": { "dir": "win", "patterns": ["src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe"] },
+      "android": { "dir": "android", "patterns": ["src-tauri/gen/android/app/build/outputs/apk/**/*.apk"] }
+    }
+  }
+}
+```
+
+> 注意：在 macOS 上交叉编译 Linux 时，tauri bundler 不支持生成 deb/rpm/AppImage，产物为裸二进制（tauri 硬限制）。
 
 ## 声明式任务系统
 
@@ -154,6 +229,7 @@ build:mac  → icon:mac
 build:linux → icon:linux → linux:init
 build:android → icon:android → android:init
 build:ios  → icon:ios → ios:init
+build:*    → collect:*   （构建后自动收集产物到 dist/）
 
 冲突资源：
   resource:cross-build   — 防止多个 Rust 编译任务并行
@@ -166,8 +242,11 @@ Linux 构建使用 [`cross`](https://github.com/cross-rs/cross) 通过 Docker �
 
 `linux:init` 任务会自动将以下模板复制到目标项目的 `src-tauri/` 目录（已存在则跳过，不覆盖自定义配置）：
 
-- `Cross.toml` — 告诉 `cross` 为 `x86_64-unknown-linux-gnu` 目标使用自定义镜像
-- `Dockerfile.cross-linux` — 基于 cross 官方目标镜像，预装 `libwebkit2gtk-4.1-dev` 等 Tauri 依赖
+- `Cross.toml` — 告诉 `cross` 为 `x86_64-unknown-linux-gnu` / `x86_64-pc-windows-gnu` 目标使用自定义镜像
+- `Dockerfile.cross-linux` — 基于 cross 官方 Linux 目标镜像，预装 `libwebkit2gtk-4.1-dev` 等 Tauri 依赖
+- `Dockerfile.cross-windows` — 基于 cross 官方 Windows (GNU) 目标镜像，强制 `linux/amd64` 平台
+
+> 在 Apple Silicon（arm64）主机上，cross 官方镜像只提供 amd64 manifest，Docker 默认请求 arm64 会拉取失败，因此自定义 Dockerfile 通过 `--platform=linux/amd64` 强制平台（经 Rosetta/qemu 模拟）。
 
 首次构建时 Docker 会自动构建此镜像（之后缓存复用）。如需自定义 Linux 依赖，直接编辑 `src-tauri/Dockerfile.cross-linux` 即可。
 
@@ -228,18 +307,20 @@ if (errors.length === 0) {
 
 ## 图标配置
 
-图标源文件放在项目根目录的 `icons/` 文件夹。工具按 `icon-config.json` 中的优先级链查找：
+图标源文件放在项目根目录的 `icons/` 文件夹。图标源与输出路径通过配置体系的 `icons.platforms` 段控制（默认值见 `config/htb.default.json`，可被 `htb.config.json` / `--set` 覆盖）：
 
-```json
+```jsonc
 {
-  "platforms": {
-    "win": {
-      "source": ["icon-win.png", "icon-desktop.png", "icon.png"],
-      "output": "src-tauri/icons"
-    },
-    "android": {
-      "source": ["icon-android.png", "icon.png"],
-      "output": "src-tauri/gen/android/app/src/main/res"
+  "icons": {
+    "platforms": {
+      "win": {
+        "source": ["icon-win.png", "icon-desktop.png", "icon.png"],
+        "output": "src-tauri/icons"
+      },
+      "android": {
+        "source": ["icon-android.png", "icon.png"],
+        "output": "src-tauri/gen/android/app/src/main/res"
+      }
     }
   }
 }

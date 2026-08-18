@@ -1,11 +1,14 @@
 import net from 'net';
+import configModule from '../../config.cjs';
+
+const tuiConfig = configModule.getConfig().tui;
 
 /*
  * 连接到构建 TCP 服务，返回指定任务的状态和日志
  */
 export function getTaskStatus(port, taskName) {
   return new Promise((resolve) => {
-    const sock = net.createConnection({ port, host: '127.0.0.1' });
+    const sock = net.createConnection({ port, host: tuiConfig.host });
     sock.setEncoding('utf8');
 
     let buf = '';

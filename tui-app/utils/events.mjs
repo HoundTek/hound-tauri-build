@@ -2,6 +2,9 @@
 // 架构：双路径输入（data + readable），手动解析，无 readline 依赖
 
 import { updateTerminalSize } from './terminal-size.mjs';
+import configModule from '../../config.cjs';
+
+const tuiConfig = configModule.getConfig().tui;
 
 const handlers = { key: [], mouse: [], click: [], scroll: [], resize: [] };
 let stdin = null;
@@ -226,7 +229,7 @@ function processChunk(chunk) {
     progress = true;
   }
 
-  if (inputBuf.length > 8192) inputBuf = '';
+  if (inputBuf.length > tuiConfig.inputBufferLimit) inputBuf = '';
 }
 
 // ── 初始化 / 销毁 ─────────────────────────────────────

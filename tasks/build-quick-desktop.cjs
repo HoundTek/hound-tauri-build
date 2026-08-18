@@ -3,5 +3,5 @@ module.exports = {
   description: 'build-quick desktop',
   dependsOn: [],
   conflicts: ['resource:cross-build'],
-  run: { cmd: 'tauri build --runner cross' },
+  run: { cmd: 'tauri build' },
 };

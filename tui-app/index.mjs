@@ -1,12 +1,15 @@
 // TUI 应用入口 — 连接后端 TCP，驱动前端渲染
 
 import net from 'net';
+import configModule from '../config.cjs';
 import { makePage, running, toggleFinished, setScrollCallback, isFooterEditing, exitPanel,
          initFromTasks, onTaskStatus, onLogEntry, onBuildExit } from './demos/index.mjs';
 import { initEvents, on, destroyEvents } from './utils/events.mjs';
 import { advanceTick } from './utils/tick.mjs';
-import { logSel } from './utils/focus.mjs';
+import { logSel, vimMode } from './utils/focus.mjs';
 import { getTerminalSize, initTerminalSize, updateTerminalSize } from './utils/terminal-size.mjs';
+
+const tuiConfig = configModule.getConfig().tui;
 
 const ALT_ON   = '\x1b[?1049h';
 const ALT_OFF  = '\x1b[?1049l';
@@ -63,6 +66,7 @@ function bindExitPanel() {
         logSel.active = false;
         logSel.startLine = -1;
         logSel.endLine = -1;
+        vimMode.visual = false;
         requestRedraw();
         return;
       }
@@ -142,7 +146,7 @@ function restoreTerminal() {
 // ── TCP 连接后端 ──
 
 let tcpBuf = '';
-const sock = net.createConnection({ port, host: '127.0.0.1' });
+const sock = net.createConnection({ port, host: tuiConfig.host });
 sock.setEncoding('utf8');
 sock.setNoDelay(true);
 
@@ -180,7 +184,7 @@ function handleMessage(msg) {
         on('resize', redraw);
         initTerminalSize();
         redraw();
-        updateTimer = setInterval(redraw, 500);
+        updateTimer = setInterval(redraw, tuiConfig.refreshMs);
       }
       break;
     case 'status':
@@ -197,7 +201,7 @@ function handleMessage(msg) {
       break;
     case 'auto-exit':
       // --end-tui：构建已结束，短暂展示最终结果后自动退出
-      setTimeout(cleanupAndExit, 1500);
+      setTimeout(cleanupAndExit, tuiConfig.exitDelayMs);
       break;
   }
 }
@@ -233,6 +237,6 @@ setInterval(() => {
     restoreTerminal();
     process.exit(0);
   }
-}, 1000);
+}, tuiConfig.parentPollMs);
 
 

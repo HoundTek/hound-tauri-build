@@ -26,6 +26,11 @@ export const logSel = {
   endCol: -1,
 };
 
+/** 日志区 vim 模式状态 */
+export const vimMode = {
+  visual: false,     // visual 模式激活（v 进入，Esc/v 退出）
+};
+
 // ── 渲染辅助 ───────────────────────────────────────
 
 const REV    = '\x1b[7m';  // 反白
@@ -236,6 +241,7 @@ export function initFocus(opts) {
     filterRow,
     onUpdate,
     onCopy,
+    onCopyAll,
     isExitPanelVisible,
   } = opts;
 
@@ -261,6 +267,11 @@ export function initFocus(opts) {
       : order[(idx + 1) % 3];
     if (prev === 'footer' && focusState.focus !== 'footer' && filterRow) {
       filterRow.exitEditing();
+    }
+    if (prev === 'log' && focusState.focus !== 'log') {
+      // 离开日志区时退出 vim visual 选区
+      vimMode.visual = false;
+      logSel.active = false;
     }
     onUpdate();
   });
@@ -341,7 +352,9 @@ export function initFocus(opts) {
     }
   });
 
-  // ── 日志 ─────────────────────────────────────────
+  // ── 日志（含简易 vim 模式） ──────────────────────
+
+  let _lastGTime = 0; // gg 双击判定
 
   on('key', (k) => {
     if (locked()) return;
@@ -350,28 +363,80 @@ export function initFocus(opts) {
     if (!ctx || !ctx.scrollState) return;
     const s = focusState;
 
-    // ↑/k → 光标上移，↓/j → 光标下移（超出可见区域时最小位移滚入）
-    if (k.name === 'up' || k.name === 'k') {
-      if (ctx.lineToEntry.length === 0) return;
-      s.logCursor = Math.max(0, s.logCursor - 1);
-      ensureCursorVisible(ctx.scrollState, ctx.height, ctx.lineToEntry.length, s.logCursor);
-      onUpdate(); return;
+    // visual 激活时，选区终点跟随光标移动
+    function syncVisualEnd(line) {
+      if (!vimMode.visual) return;
+      logSel.endLine = line;
+      logSel.endCol = Infinity;
+      logSel.active = true;
     }
-    if (k.name === 'down' || k.name === 'j') {
+
+    // ── 光标移动（normal + visual）──
+    let target = null;
+    if (k.name === 'up' || k.name === 'k') {
+      target = Math.max(0, s.logCursor - 1);
+    } else if (k.name === 'down' || k.name === 'j') {
+      target = Math.min(ctx.lineToEntry.length - 1, s.logCursor + 1);
+    } else if (k.name === 'home') {
+      target = 0;
+    } else if (k.name === 'end') {
+      target = ctx.lineToEntry.length - 1;
+    }
+    if (target !== null) {
       if (ctx.lineToEntry.length === 0) return;
-      s.logCursor = Math.min(ctx.lineToEntry.length - 1, s.logCursor + 1);
+      s.logCursor = target;
       ensureCursorVisible(ctx.scrollState, ctx.height, ctx.lineToEntry.length, s.logCursor);
+      syncVisualEnd(s.logCursor);
       onUpdate(); return;
     }
 
-    if (k.name === 'home') {
-      s.logCursor = 0;
-      ctx.scrollState.maxIndex = Math.max(0, Math.min(ctx.height, ctx.lineToEntry.length) - 1);
+    // ── gg / G：跳到顶部 / 底部 ──
+    if (!k.ctrl && !k.meta && k.name === 'g') {
+      const now = Date.now();
+      if (_lastGTime && now - _lastGTime < 500) {
+        _lastGTime = 0;
+        if (ctx.lineToEntry.length === 0) return;
+        s.logCursor = 0;
+        ensureCursorVisible(ctx.scrollState, ctx.height, ctx.lineToEntry.length, s.logCursor);
+        syncVisualEnd(0);
+        onUpdate(); return;
+      }
+      _lastGTime = now;
+      return;
+    }
+    if (!k.ctrl && !k.meta && k.name === 'G') {
+      if (ctx.lineToEntry.length === 0) return;
+      s.logCursor = ctx.lineToEntry.length - 1;
+      ensureCursorVisible(ctx.scrollState, ctx.height, ctx.lineToEntry.length, s.logCursor);
+      syncVisualEnd(s.logCursor);
       onUpdate(); return;
     }
-    if (k.name === 'end') {
-      s.logCursor = ctx.lineToEntry.length - 1;
-      ctx.scrollState.maxIndex = ctx.lineToEntry.length - 1;
+
+    // ── Ctrl+d / Ctrl+u：半页滚动 ──
+    if (k.ctrl && (k.name === 'd' || k.name === 'u')) {
+      if (ctx.lineToEntry.length === 0) return;
+      const step = Math.max(1, Math.floor((ctx.height || 10) / 2));
+      const dir = k.name === 'd' ? 1 : -1;
+      s.logCursor = Math.min(ctx.lineToEntry.length - 1, Math.max(0, s.logCursor + dir * step));
+      ensureCursorVisible(ctx.scrollState, ctx.height, ctx.lineToEntry.length, s.logCursor);
+      syncVisualEnd(s.logCursor);
+      onUpdate(); return;
+    }
+
+    // ── v：进入 / 退出 visual 模式 ──
+    if (!k.ctrl && !k.meta && k.name === 'v') {
+      if (ctx.lineToEntry.length === 0) return;
+      if (vimMode.visual) {
+        vimMode.visual = false;
+        logSel.active = false;
+      } else {
+        vimMode.visual = true;
+        logSel.active = true;
+        logSel.startLine = s.logCursor;
+        logSel.startCol = PREFIX_W;
+        logSel.endLine = s.logCursor;
+        logSel.endCol = Infinity;
+      }
       onUpdate(); return;
     }
 
@@ -387,6 +452,13 @@ export function initFocus(opts) {
     if (isCopyKey && logSel.active && onCopy) {
       onCopy({ ...logSel });
       logSel.active = false;
+      vimMode.visual = false;
+      onUpdate();
+      return;
+    }
+    // ── c：复制当前筛选视图下的全部日志（无选中时） ──
+    if (!k.ctrl && !k.meta && k.name === 'c' && onCopyAll) {
+      onCopyAll();
       onUpdate();
       return;
     }
@@ -487,6 +559,7 @@ export function initFocus(opts) {
     logSel.endLine = lineIdx;
     logSel.startCol = col;
     logSel.endCol = col;
+    vimMode.visual = false; // 鼠标拖拽选区会覆盖 vim visual 选区
     onUpdate();
   });
 

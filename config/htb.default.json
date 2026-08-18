@@ -1,0 +1,155 @@
+{
+  "build": {
+    "retry": 3,
+    "concurrency": 4,
+    "retryBaseDelay": 1000,
+    "retryMaxDelay": 30000,
+    "tuiStartRetries": 3,
+    "tuiStartRetryDelayMs": 500,
+    "tuiConnectTimeoutMs": 10000,
+    "tuiExitFlushMs": 200,
+    "summaryWidth": 50
+  },
+  "tui": {
+    "host": "127.0.0.1",
+    "refreshMs": 500,
+    "exitDelayMs": 1500,
+    "parentPollMs": 1000,
+    "logLimit": 5000,
+    "minCols": 70,
+    "minRows": 16,
+    "inputBufferLimit": 8192
+  },
+  "icons": {
+    "platforms": {
+      "desktop": {
+        "source": ["icon-desktop.png", "icon.png"],
+        "output": "src-tauri/icons"
+      },
+      "mac": {
+        "source": ["icon-mac.png", "icon-desktop.png", "icon.png"],
+        "output": "src-tauri/icons"
+      },
+      "win": {
+        "source": ["icon-win.png", "icon-desktop.png", "icon.png"],
+        "output": "src-tauri/icons"
+      },
+      "linux": {
+        "source": ["icon-linux.png", "icon-desktop.png", "icon.png"],
+        "output": "src-tauri/icons"
+      },
+      "android": {
+        "source": ["icon-android.png", "icon.png"],
+        "output": "src-tauri/gen/android/app/src/main/res"
+      },
+      "ios": {
+        "source": ["icon-ios.png", "icon.png"],
+        "output": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset"
+      }
+    },
+    "tempDir": "icons/temp"
+  },
+  "ios": {
+    "target": "device",
+    "sign": true
+  },
+  "artifacts": {
+    "output": "dist",
+    "platforms": {
+      "win": {
+        "dir": "win",
+        "patterns": ["src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe"]
+      },
+      "linux": {
+        "dir": "linux",
+        "patterns": ["src-tauri/target/x86_64-unknown-linux-gnu/release/hound-whiteboard"]
+      },
+      "mac": {
+        "dir": "mac",
+        "patterns": ["src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app"]
+      },
+      "mac-universal": {
+        "dir": "mac-universal",
+        "patterns": ["src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app"]
+      },
+      "android": {
+        "dir": "android",
+        "patterns": [
+          "src-tauri/gen/android/app/build/outputs/apk/**/*.apk",
+          "src-tauri/gen/android/app/build/outputs/bundle/**/*.aab"
+        ]
+      },
+      "ios": {
+        "dir": "ios",
+        "patterns": ["src-tauri/gen/apple/build/**/*.app"]
+      }
+    }
+  },
+  "commands": {
+    "platforms": ["desktop", "mac", "win", "linux", "android", "ios", "desktop-platforms", "mobile", "all"],
+    "iconPlatforms": ["desktop", "mac", "win", "linux", "android", "ios"],
+    "build": {
+      "desktop": ["collect:desktop"],
+      "mac": ["collect:mac"],
+      "mac-universal": ["collect:mac-universal"],
+      "win": ["collect:win"],
+      "linux": ["collect:linux"],
+      "android": ["collect:android"],
+      "ios": ["collect:ios"],
+      "desktop-platforms": ["collect:desktop"],
+      "mobile": ["collect:mobile"],
+      "all": ["collect:all"]
+    },
+    "buildQuick": {
+      "desktop": ["build-quick:desktop"],
+      "mac": ["build-quick:mac"],
+      "mac-universal": ["build-quick:mac-universal"],
+      "win": ["build-quick:win"],
+      "linux": ["build-quick:linux"],
+      "android": ["build-quick:android"],
+      "ios": ["build-quick:ios"]
+    },
+    "ship": {
+      "desktop": ["test", "collect:desktop"],
+      "mac": ["test", "collect:mac"],
+      "mac-universal": ["test", "collect:mac-universal"],
+      "win": ["test", "collect:win"],
+      "linux": ["test", "collect:linux"],
+      "android": ["test", "collect:android"],
+      "ios": ["test", "collect:ios"],
+      "desktop-platforms": ["test", "collect:desktop"],
+      "mobile": ["test", "collect:mobile"],
+      "all": ["test", "collect:all"]
+    },
+    "devSetup": {
+      "desktop": ["icon:desktop"],
+      "mac": ["icon:mac"],
+      "win": ["icon:win"],
+      "linux": ["icon:linux"],
+      "android": ["icon:android"],
+      "ios": ["icon:ios"]
+    },
+    "devCmd": {
+      "desktop": "tauri dev",
+      "mac": "tauri dev",
+      "win": "tauri dev",
+      "linux": "tauri dev",
+      "android": "tauri android dev",
+      "ios": "tauri ios dev"
+    }
+  },
+  "tasks": {
+    "build:win": { "cmd": "rm -rf src-tauri/.htb-frontend-dist && cp -r src src-tauri/.htb-frontend-dist && tauri build --runner cross --target x86_64-pc-windows-gnu --bundles nsis --config '{\"build\":{\"frontendDist\":\"./.htb-frontend-dist\"}}'; code=$?; rm -rf src-tauri/.htb-frontend-dist; exit $code" },
+    "build-quick:win": { "cmd": "rm -rf src-tauri/.htb-frontend-dist && cp -r src src-tauri/.htb-frontend-dist && tauri build --runner cross --target x86_64-pc-windows-gnu --bundles nsis --config '{\"build\":{\"frontendDist\":\"./.htb-frontend-dist\"}}'; code=$?; rm -rf src-tauri/.htb-frontend-dist; exit $code" },
+    "build:mac": { "cmd": "tauri build --target x86_64-apple-darwin --bundles app" },
+    "build-quick:mac": { "cmd": "tauri build --bundles app" },
+    "build:mac-universal": { "cmd": "tauri build --target universal-apple-darwin --bundles app" },
+    "build-quick:mac-universal": { "cmd": "tauri build --target universal-apple-darwin --bundles app" },
+    "build:linux": { "cmd": "rm -rf src-tauri/.htb-frontend-dist && cp -r src src-tauri/.htb-frontend-dist && tauri build --runner cross --target x86_64-unknown-linux-gnu --config '{\"build\":{\"frontendDist\":\"./.htb-frontend-dist\"}}'; code=$?; rm -rf src-tauri/.htb-frontend-dist; exit $code" },
+    "build-quick:linux": { "cmd": "rm -rf src-tauri/.htb-frontend-dist && cp -r src src-tauri/.htb-frontend-dist && tauri build --runner cross --target x86_64-unknown-linux-gnu --bundles deb appimage rpm --config '{\"build\":{\"frontendDist\":\"./.htb-frontend-dist\"}}'; code=$?; rm -rf src-tauri/.htb-frontend-dist; exit $code" },
+    "build-quick:desktop": { "cmd": "tauri build" },
+    "build:android": { "cmd": "tauri android build" },
+    "build-quick:android": { "cmd": "tauri android build" },
+    "test": { "cmd": "yarn test" }
+  }
+}

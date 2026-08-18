@@ -1,4 +1,5 @@
 import { useScroll } from '../components/scroll.mjs';
+import configModule from '../../config.cjs';
 import { logSpace } from '../components/log-space.mjs';
 import { drawTreeWithMap } from '../components/tree.mjs';
 import { taskNode } from '../components/task-node.mjs';
@@ -14,7 +15,10 @@ import { wrapLine } from '../utils/wrap-line.mjs';
 import { wrapUrls } from '../utils/wrap-urls.mjs';
 import { textWidth, visSlice } from '../utils/text-width.mjs';
 import { getTerminalSize } from '../utils/terminal-size.mjs';
-import { initFocus, focusState, clampCursors, highlightLine, applyLogSelection, highlightSlot, getTreeSlots, logSel } from '../utils/focus.mjs';
+import { initFocus, focusState, clampCursors, highlightLine, applyLogSelection, highlightSlot, getTreeSlots, logSel, vimMode } from '../utils/focus.mjs';
+import { on } from '../utils/events.mjs';
+
+const tuiConfig = configModule.getConfig().tui;
 
 // ── 数据 ────────────────────────────────────────────
 
@@ -98,9 +102,12 @@ export function onTaskStatus(taskId, status, elapsed) {
   updateNodeStatus(tree, taskId, status, elapsed);
 }
 
-/** 添加日志条目 */
+/** 添加日志条目（超出 tui.logLimit 时裁剪头部，防止长构建内存无限增长） */
 export function onLogEntry(text, taskId) {
   logEntries.push({ text, level: detectLevel(text), taskId: taskId || '' });
+  if (logEntries.length > tuiConfig.logLimit) {
+    logEntries.splice(0, logEntries.length - tuiConfig.logLimit);
+  }
 }
 
 /** 构建结束 */
@@ -198,6 +205,19 @@ function copyToClipboard(sel) {
   process.stdout.write(`\x1b]52;c;${b64}\x07`);
 }
 
+// ── 复制按钮：复制当前筛选视图下的全部日志 ──────────
+
+let copyFlashAt = 0; // 复制按钮反白反馈时间戳
+
+function copyAllLogs() {
+  const taskFilters = buildTaskFilters(tree);
+  const filtered = applyFilter(logEntries, { ...filterState, taskFilters });
+  const text = filtered.map((e) => stripAnsi(e.text)).join('\n');
+  if (!text) return;
+  const b64 = Buffer.from(text, 'utf-8').toString('base64');
+  process.stdout.write(`\x1b]52;c;${b64}\x07`);
+}
+
 // ── 初始化焦点系统 ──────────────────────────────────
 
 initFocus({
@@ -209,7 +229,29 @@ initFocus({
   filterRow,
   onUpdate: () => _onUpdate?.(),
   onCopy: copyToClipboard,
+  onCopyAll: copyAllLogs,
   isExitPanelVisible: () => exitPanel.visible,
+});
+
+// ── 复制按钮：点击日志状态栏右端的 [Copy] 复制全部日志 ──
+
+const COPY_BTN_W = 6; // '[Copy]' 可见宽度
+
+on('mouse', (e) => {
+  if (e.type !== 'down' || e.btn !== 0) return;
+  if (exitPanel.visible) return;
+  const ctx = _logCtx;
+  if (!ctx || !ctx.scrollState) return;
+  // 状态行仅在内容溢出时存在（scrolledLog 满高），位于日志框内最后一行
+  if (ctx.lineToEntry.length <= ctx.height) return;
+  const statusY = ctx.y + ctx.height - 1;
+  if (e.y !== statusY) return;
+  const { columns } = getTerminalSize();
+  const btnX0 = columns - 2 - COPY_BTN_W; // 右对齐，距右边框 1 列
+  if (e.x < btnX0 || e.x >= columns - 2) return;
+  copyAllLogs();
+  copyFlashAt = Date.now();
+  _onUpdate?.();
 });
 
 // ── 统计辅助 ────────────────────────────────────────
@@ -234,9 +276,9 @@ export function makePage() {
   const W = Math.max(1, columns);
   const H = Math.max(3, rows);
 
-  // ── 终端尺寸过小提示 ────────────────────────────
-  const MIN_COL = 70;
-  const MIN_ROW = 16;
+  // ── 终端尺寸过小提示（阈值来自 tui.minCols / tui.minRows） ──
+  const MIN_COL = tuiConfig.minCols;
+  const MIN_ROW = tuiConfig.minRows;
   if (W < MIN_COL || H < MIN_ROW) {
     const out = Array(H).fill(' '.repeat(W));
     const msgW = 50;
@@ -355,7 +397,11 @@ export function makePage() {
 
   // 日志面板 — 先叠加拖拽选择高亮，渲染；焦点行在框线内部换底色
   let logRenderLines = applyLogSelection(wrappedLogLines);
-  const scrolledLog = logScroll.render(Math.max(1, logH - 2), logInnerW, logRenderLines, focusState.logCursor);
+  // 复制按钮：复制后 600ms 内反白反馈；仅在内容溢出（存在状态行）时显示
+  const copyBtnText = Date.now() - copyFlashAt < 600 ? '\x1b[7m[Copy]\x1b[27m' : '[Copy]';
+  // vim visual 模式提示（状态行左端）
+  const vimPrefix = vimMode.visual ? '\x1b[7m VISUAL \x1b[27m' : '';
+  const scrolledLog = logScroll.render(Math.max(1, logH - 2), logInnerW, logRenderLines, focusState.logCursor, copyBtnText, vimPrefix);
 
   // 日志焦点行：框线内部整行换底色（仅键盘交互时显示）
   if (focusState.focus === 'log' && focusState.focusVisible && !exitPanel.visible && wrappedLogLines.length > 0) {

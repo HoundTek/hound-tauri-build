@@ -12,7 +12,7 @@
     "index.js",
     "bin/",
     "*.cjs",
-    "icon-config.json",
+    "config/",
     "tasks/",
     "templates/",
     "tui-app/"

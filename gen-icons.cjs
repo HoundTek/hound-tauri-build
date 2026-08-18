@@ -1,11 +1,12 @@
 const fs = require('fs')
 const path = require('path')
 const { execSync } = require('child_process')
+const { getConfig } = require('./config.cjs')
 
 const scriptDir = __dirname
 const rootDir = process.env.HOUND_BUILD_ROOT || path.resolve(scriptDir, '../..')
-const configPath = path.join(scriptDir, 'icon-config.json')
-const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+// 图标配置来自统一配置（config/htb.default.json → 项目 htb.config.json → --set 覆盖）
+const config = getConfig().icons
 
 function findSource(candidates) {
   for (const name of candidates) {
@@ -80,8 +81,9 @@ function copyEntries(tempDir, destDir, platform, clean) {
         const full = path.join(destDir, e.name)
         if (platform === 'android' && e.name.startsWith('mipmap-')) {
           fs.rmSync(full, { recursive: true, force: true })
-        } else if (platform === 'ios' && /^AppIcon-.*\.png$/.test(e.name)) {
-          fs.rmSync(full, { force: true })
+        } else if (platform === 'ios' && e.name !== 'Contents.json') {
+          // iOS appiconset 只保留 Contents.json：清理 AppIcon-*.png 及误拷的顶层桌面文件
+          fs.rmSync(full, { recursive: true, force: true })
         }
       }
     }
@@ -96,6 +98,8 @@ function copyEntries(tempDir, destDir, platform, clean) {
     // 过滤跨平台文件
     if (platform === 'android' && entry.name === 'ios') continue
     if (platform === 'ios' && entry.name.startsWith('mipmap-')) continue
+    // iOS 图标全部位于 temp 的 ios/ 子目录，仅拷贝该子目录内容（appiconset 不接收顶层桌面图标）
+    if (platform === 'ios' && entry.name !== 'ios') continue
     // 拷贝到 icons/ 时排除移动端专属文件
     if (platform === 'icons-only' && (entry.name.startsWith('mipmap-') || entry.name === 'ios' || entry.name === 'android' || /^AppIcon-.*\.png$/.test(entry.name))) continue
     const src = path.join(tempDir, entry.name)

@@ -3,5 +3,5 @@ module.exports = {
   description: 'build-quick mac-universal',
   dependsOn: [],
   conflicts: ['resource:cross-build'],
-  run: { cmd: 'tauri build --runner cross --target universal-apple-darwin' },
+  run: { cmd: 'tauri build --target universal-apple-darwin --bundles app' },
 };

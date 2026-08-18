@@ -5,9 +5,13 @@
 # Dockerfile.cross-linux 基于 cross 官方目标镜像，预装了 Tauri v2 所需的
 # libwebkit2gtk-4.1-dev 等 GTK/WebKit 系统依赖。
 
-[build]
-# 让 Tauri CLI 检测到我们在用 cross 构建
-passthrough = ["TAURI_*", "CARGO_*"]
+[build.env]
+# 透传 TAURI_CONFIG：让容器内的 tauri-build 宏能读到 `--config` 合并后的
+# frontendDist 等配置（cross 0.2 默认只透传 CARGO_*/RUSTFLAGS 等变量）
+passthrough = ["TAURI_CONFIG"]
 
 [target.x86_64-unknown-linux-gnu]
 dockerfile = "./Dockerfile.cross-linux"
+
+[target.x86_64-pc-windows-gnu]
+dockerfile = "./Dockerfile.cross-windows"

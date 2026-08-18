@@ -6,7 +6,7 @@
 # 注意：必须使用 :main 标签（Ubuntu 24.04）。cross 的 :latest 基于 Ubuntu
 # 16.04（已 EOL，apt 源失效且无 webkit2gtk-4.x 包），会导致构建失败。
 
-FROM ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main
+FROM --platform=linux/amd64 ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main
 
 ENV DEBIAN_FRONTEND=noninteractive
 

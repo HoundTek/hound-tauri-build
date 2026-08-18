@@ -25,6 +25,7 @@ function initLinuxCross() {
   const templates = [
     { src: 'Cross.toml', dest: 'Cross.toml' },
     { src: 'Dockerfile.cross-linux', dest: 'Dockerfile.cross-linux' },
+    { src: 'Dockerfile.cross-windows', dest: 'Dockerfile.cross-windows' },
   ];
 
   for (const { src, dest } of templates) {

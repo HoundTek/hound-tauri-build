@@ -9,5 +9,5 @@ module.exports = {
   description: 'ios init',
   dependsOn: [],
   conflicts: ['resource:tauri-cli'],
-  run: { cmd: 'node -e "require(\'fs\').rmSync(\'src-tauri/gen/ios\',{recursive:true,force:true})" && yarn init:ios' },
+  run: { cmd: 'node -e "require(\'fs\').rmSync(\'src-tauri/gen/apple\',{recursive:true,force:true})" && tauri ios init' },
 };

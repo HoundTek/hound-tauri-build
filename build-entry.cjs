@@ -7,7 +7,9 @@
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const net = require('net');
+const fs = require('fs');
 const { runCmdInherit, loadTaskRegistry, resolveTaskGraph, executeTasks, ROOT_DIR } = require('./task-runner.cjs');
+const { loadConfig, getConfig } = require('./config.cjs');
 
 const TUI_PATH = path.join(__dirname, 'tui-app', 'index.mjs');
 
@@ -15,68 +17,28 @@ const TUI_PATH = path.join(__dirname, 'tui-app', 'index.mjs');
 //  命令 → 目标任务 ID 映射
 // ============================================================
 
-const ALL_PLATFORMS = ['desktop', 'mac', 'win', 'linux', 'android', 'ios', 'desktop-platforms', 'mobile', 'all'];
-const ICON_PLATFORMS = ['desktop', 'mac', 'win', 'linux', 'android', 'ios'];
+// ============================================================
+// 平台 → 任务映射（全部来自统一配置 config/htb.default.json，可被项目 htb.config.json 覆盖）
+// ============================================================
+const config = loadConfig();
+const ALL_PLATFORMS = config.commands.platforms;
+const ICON_PLATFORMS = config.commands.iconPlatforms;
 
 /**
  * 给定命令和平台，返回需要解析执行的目标任务 ID 列表
  */
 const COMMAND_TASKS = {
-  build: {
-    desktop: ['build:desktop'],
-    mac: ['build:mac'],
-    'mac-universal': ['build:mac-universal'],
-    win: ['build:win'],
-    linux: ['build:linux'],
-    android: ['build:android'],
-    ios: ['build:ios'],
-    'desktop-platforms': ['build:desktop'],
-    mobile: ['build:mobile'],
-    all: ['build:all'],
-  },
-  'build-quick': {
-    desktop: ['build-quick:desktop'],
-    mac: ['build-quick:mac'],
-    'mac-universal': ['build-quick:mac-universal'],
-    win: ['build-quick:win'],
-    linux: ['build-quick:linux'],
-    android: ['build-quick:android'],
-    ios: ['build-quick:ios'],
-  },
-  ship: {
-    desktop: ['test', 'build:desktop'],
-    mac: ['test', 'build:mac'],
-    'mac-universal': ['test', 'build:mac-universal'],
-    win: ['test', 'build:win'],
-    linux: ['test', 'build:linux'],
-    android: ['test', 'build:android'],
-    ios: ['test', 'build:ios'],
-    'desktop-platforms': ['test', 'build:desktop'],
-    mobile: ['test', 'build:mobile'],
-    all: ['test', 'build:all'],
-  },
+  build: config.commands.build,
+  'build-quick': config.commands.buildQuick,
+  ship: config.commands.ship,
 };
 
 /** dev 命令在依赖任务完成后还需要 spawn tauri dev */
-const DEV_SETUP_TASKS = {
-  desktop: ['icon:desktop'],
-  mac: ['icon:mac'],
-  win: ['icon:win'],
-  linux: ['icon:linux'],
-  android: ['icon:android'],
-  ios: ['icon:ios'],
-};
+const DEV_SETUP_TASKS = config.commands.devSetup;
 
 /** dev 命令的长运行进程 */
 const CP = `node "${path.join(__dirname, 'gen-icons.cjs')}"`;
-const DEV_CMD = {
-  desktop: 'tauri dev',
-  mac: 'tauri dev',
-  win: 'tauri dev',
-  linux: 'tauri dev',
-  android: 'tauri android dev',
-  ios: 'tauri ios dev',
-};
+const DEV_CMD = config.commands.devCmd;
 
 // ============================================================
 //  TUI (TCP → Ink process)
@@ -87,6 +49,7 @@ let tuiChild = null;
 let NO_TUI = false;   // --no-tui 参数强制禁用 TUI
 let END_TUI = false;  // --end-tui 构建结束后自动退出 TUI
 let RETRY = null;     // --retry <n> 全局重试次数覆盖
+const SET_OVERRIDES = {}; // --set <path>=<value> 命令行配置覆盖（可多次）
 let SKIP = new Set(); // --skip <id...> 要跳过的任务 ID 集合
 
 /** @returns {boolean} */
@@ -102,7 +65,8 @@ function startTui() {
   return new Promise((resolve, reject) => {
     let resolved = false;
     let retries = 0;
-    const MAX_RETRIES = 3;
+    const MAX_RETRIES = config.build.tuiStartRetries;
+    const RETRY_DELAY = config.build.tuiStartRetryDelayMs;
 
     function tryStart() {
       if (resolved) return;
@@ -120,14 +84,14 @@ function startTui() {
         server.close();
         if (resolved) return;
         if (++retries < MAX_RETRIES) {
-          setTimeout(tryStart, 500);
+          setTimeout(tryStart, config.build.tuiStartRetryDelayMs);
           return;
         }
         resolved = true;
         reject(err);
       });
 
-      server.listen(0, '127.0.0.1', () => {
+      server.listen(0, config.tui.host, () => {
         if (resolved) return;
         const port = server.address().port;
         tuiChild = spawn(process.execPath, [TUI_PATH, String(port)], {
@@ -139,7 +103,7 @@ function startTui() {
           if (resolved) return;
           server.close();
           if (++retries < MAX_RETRIES) {
-            setTimeout(tryStart, 500);
+            setTimeout(tryStart, config.build.tuiStartRetryDelayMs);
             return;
           }
           resolved = true;
@@ -151,7 +115,7 @@ function startTui() {
           if (resolved) return;
           server.close();
           if (++retries < MAX_RETRIES) {
-            setTimeout(tryStart, 500);
+            setTimeout(tryStart, config.build.tuiStartRetryDelayMs);
             return;
           }
           resolved = true;
@@ -170,7 +134,7 @@ function startTui() {
       }
       resolved = true;
       reject(new Error('TUI connection timeout'));
-    }, 10000);
+    }, config.build.tuiConnectTimeoutMs);
   });
 }
 
@@ -268,7 +232,7 @@ function printSummary(summary) {
   }
 
   console.log();
-  console.log('─'.repeat(50));
+  console.log('─'.repeat(config.build.summaryWidth));
 
   // 总体结果
   const ok = exitOk && counts.failed === 0;
@@ -282,7 +246,7 @@ function printSummary(summary) {
   console.log(`  Tasks   ${tasks.length} total, ${parts.join(', ')}`);
 
   // 每个任务状态
-  console.log('─'.repeat(50));
+  console.log('─'.repeat(config.build.summaryWidth));
   for (const t of tasks) {
     const s = statuses[t.id];
     const icon = { done: '\x1b[32m✓\x1b[0m', failed: '\x1b[31m✗\x1b[0m', skipped: '\x1b[33m○\x1b[0m', running: '…', pending: '…' }[s?.status] || ' ';
@@ -290,7 +254,7 @@ function printSummary(summary) {
     console.log(`  ${icon}  ${t.description || t.id}${elapsed}`);
   }
 
-  console.log('─'.repeat(50));
+  console.log('─'.repeat(config.build.summaryWidth));
   console.log();
 }
 
@@ -351,7 +315,7 @@ async function runWithTuiOrFallback(targetIds, opts = {}) {
   if (endTui && isTuiAlive()) sendTui({ type: 'auto-exit' });
   if (isTuiAlive()) await waitTuiExit();
   // 等待 TUI 的 stdout 缓冲区完全刷新，避免 printSummary 输出交叠
-  await new Promise((r) => setTimeout(r, 200));
+  await new Promise((r) => setTimeout(r, config.build.tuiExitFlushMs));
   printSummary(collector.getSummary());
   return ok;
 }
@@ -399,11 +363,34 @@ function showHelp() {
   console.log('  ship [platform|task...]   - Run tests + build for platform');
   console.log('  icon [platform|all|task...] - Generate icons');
   console.log();
+  console.log('  build/ship auto-collect artifacts to artifacts.output (default dist/<platform>/).');
+  console.log('  collect:<platform> tasks can be run explicitly: htb build collect:win');
+  console.log();
   console.log('Options:');
   console.log('  --no-tui                  - Disable TUI mode, use inline output');
   console.log('  --end-tui                 - Auto-exit TUI when build finishes');
-  console.log('  --retry <n>               - Override retry count for failed tasks (default 3)');
+  console.log(`  --retry <n>               - Override retry count for failed tasks (default ${config.build.retry})`);
   console.log('  --skip <id[,id...]>       - Skip specified tasks (dependents still run)');
+  console.log('  --set <path>=<value>      - Override build config (repeatable), e.g. --set ios.target=sim');
+  console.log();
+  console.log('Build config:');
+  console.log('  Defaults:  config/htb.default.json (htb repo, built-in)');
+  console.log('  Project:   htb.config.json in project root (overrides defaults)');
+  console.log('  CLI:       --set <path>=<value> overrides both (highest)');
+  console.log('  Config domains:');
+  console.log('    {');
+  console.log('      "build":   { "retry", "concurrency", "retryBaseDelay", "retryMaxDelay", ... }');
+  console.log('      "tui":     { "refreshMs", "logLimit", "minCols", "minRows", ... }');
+  console.log('      "icons":   { "platforms": { desktop|mac|win|linux|android|ios }, "tempDir" }');
+  console.log('      "ios":     { "target": "device|sim", "sign": true|false }');
+  console.log('      "artifacts":{ "output": "dist", "platforms": { "<plat>": { "dir", "patterns" } } }');
+  console.log('      "commands":{ "build", "buildQuick", "ship", "devSetup", "devCmd", "platforms" }');
+  console.log('      "tasks":   { "<taskId>": { "cmd", "retry", "dependsOn" } }  // override task defs');
+  console.log('    }');
+  console.log('  Examples:');
+  console.log('    htb build ios --set ios.target=sim        # simulator build');
+  console.log('    htb build win --set tasks.build:win.cmd="tauri build"');
+  console.log('    htb icon ios --set icons.platforms.ios.output=custom/path');
   console.log();
   console.log('Platforms:');
   console.log('  desktop, win, mac, mac-universal, linux, android, ios');
@@ -435,6 +422,30 @@ function parseArgs() {
     const a = args[i];
     if (a === '--no-tui') { NO_TUI = true; continue; }
     if (a === '--end-tui') { END_TUI = true; continue; }
+    if (a === '--set') {
+      const v = args[++i];
+      if (!v) {
+        console.error('Invalid --set: missing <path>=<value>');
+        process.exit(1);
+      }
+      const eq = v.indexOf('=');
+      if (eq <= 0) {
+        console.error(`Invalid --set value "${v}": expected <path>=<value>`);
+        process.exit(1);
+      }
+      SET_OVERRIDES[v.slice(0, eq)] = v.slice(eq + 1);
+      continue;
+    }
+    if (a.startsWith('--set=')) {
+      const v = a.slice('--set='.length);
+      const eq = v.indexOf('=');
+      if (eq <= 0) {
+        console.error(`Invalid --set value "${v}": expected <path>=<value>`);
+        process.exit(1);
+      }
+      SET_OVERRIDES[v.slice(0, eq)] = v.slice(eq + 1);
+      continue;
+    }
     if (a === '--retry') {
       const v = Number(args[++i]);
       if (!Number.isInteger(v) || v < 0) {
@@ -501,6 +512,7 @@ function expandTargets(command, args) {
 
 async function main() {
   const args = parseArgs();
+  loadConfig(SET_OVERRIDES);
   const command = args[0];
   const rest = args.slice(1);
 

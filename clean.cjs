@@ -1,14 +1,16 @@
 const fs = require('fs')
 const path = require('path')
 const { execSync } = require('child_process')
+const { getConfig } = require('./config.cjs')
 
 const ROOT_DIR = process.env.HOUND_BUILD_ROOT || path.resolve(__dirname, '../..')
 
+// temp 路径与统一配置 icons.tempDir 保持一致
 const CLEAN_TARGETS = {
   target: 'src-tauri/target',
   gen: 'src-tauri/gen',
   icons: 'src-tauri/icons',
-  temp: 'icons/temp',
+  temp: getConfig().icons.tempDir,
 }
 
 const ALL_SAFE = ['target', 'gen', 'icons', 'temp']

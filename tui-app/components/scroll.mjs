@@ -65,7 +65,7 @@ function padLine(text, width) {
   return truncated;
 }
 
-export function scroll(height, width, content, maxIndex, cursorLine) {
+export function scroll(height, width, content, maxIndex, cursorLine, statusExtra, statusPrefix) {
   if (height <= 0 || width <= 0) return [];
   const total = content.length;
   if (total === 0) { const rows = []; while (rows.length < height) rows.push(' '.repeat(width)); return rows; }
@@ -110,7 +110,11 @@ export function scroll(height, width, content, maxIndex, cursorLine) {
   while (rows.length < bodyH) rows.push(' '.repeat(width));
 
   const status = statusBar({ minIndex, maxIndex, total, cursorLine });
-  rows.push(padLine(status, width));
+  // 状态行左端可加模式前缀（如 vim VISUAL），右端可附加按钮文本（右对齐）
+  const prefixW = statusPrefix ? textWidth(statusPrefix) + 1 : 0;
+  const extraW = statusExtra ? textWidth(statusExtra) + 1 : 0;
+  const mid = padLine(status, width - prefixW - extraW);
+  rows.push((statusPrefix ? statusPrefix + ' ' : '') + mid + (statusExtra ? ' ' + statusExtra : ''));
 
   return rows;
 }
@@ -160,7 +164,7 @@ export function useScroll(opts = {}) {
   on('key', onKey);
   on('scroll', onWheel);
 
-  function render(height, width, content, cursorLine) {
+  function render(height, width, content, cursorLine, statusExtra, statusPrefix) {
     state.contentLength = content.length;
     state.viewHeight = height;
     // 吸附滚动：用户未主动上滚时，新内容到达自动跟底（pinned 时禁止）
@@ -168,7 +172,7 @@ export function useScroll(opts = {}) {
     // clamp
     if (state.maxIndex > content.length - 1) state.maxIndex = content.length - 1;
     if (state.maxIndex < 0) state.maxIndex = 0;
-    return scroll(height, width, content, state.maxIndex, cursorLine);
+    return scroll(height, width, content, state.maxIndex, cursorLine, statusExtra, statusPrefix);
   }
 
   function setRect(y, height) { rect = { y, height }; }
