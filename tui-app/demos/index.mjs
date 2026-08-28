@@ -1,5 +1,5 @@
 import { useScroll } from '../components/scroll.mjs';
-import configModule from '../../config.cjs';
+import configModule from '../../lib/config.cjs';
 import { logSpace } from '../components/log-space.mjs';
 import { drawTreeWithMap } from '../components/tree.mjs';
 import { taskNode } from '../components/task-node.mjs';

@@ -2,7 +2,7 @@
 // 架构：双路径输入（data + readable），手动解析，无 readline 依赖
 
 import { updateTerminalSize } from './terminal-size.mjs';
-import configModule from '../../config.cjs';
+import configModule from '../../lib/config.cjs';
 
 const tuiConfig = configModule.getConfig().tui;
 

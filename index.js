@@ -10,14 +10,14 @@ const path = require('path');
 
 /**
  * 解析构建模块路径，兼容开发（monorepo）与发布（npm）两种布局
- * @param {string} name - 模块文件名（相对于 scripts/build/）
+ * @param {string} name - 模块文件名（相对于 lib/）
  * @returns {*} 模块导出
  */
 function resolveBuildModule(name) {
   try {
-    return require(`./${name}`);
+    return require(`./lib/${name}`);
   } catch {
-    return require(path.join(__dirname, '..', 'build', name));
+    return require(path.join(__dirname, '..', 'build', 'lib', name));
   }
 }
 

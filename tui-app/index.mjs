@@ -1,7 +1,7 @@
 // TUI 应用入口 — 连接后端 TCP，驱动前端渲染
 
 import net from 'net';
-import configModule from '../config.cjs';
+import configModule from '../lib/config.cjs';
 import { makePage, running, toggleFinished, setScrollCallback, isFooterEditing, exitPanel,
          initFromTasks, onTaskStatus, onLogEntry, onBuildExit } from './demos/index.mjs';
 import { initEvents, on, destroyEvents } from './utils/events.mjs';

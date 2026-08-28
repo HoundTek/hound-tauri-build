@@ -8,6 +8,6 @@ module.exports = {
   id: 'test',
   description: 'test',
   dependsOn: [],
-  conflicts: ['resource:cross-build'],
+  conflicts: [{ resource: 'resource:cross-build', mode: 'write' }],
   run: { cmd: 'yarn test' },
 };

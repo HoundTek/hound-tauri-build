@@ -1,5 +1,5 @@
 import net from 'net';
-import configModule from '../../config.cjs';
+import configModule from '../../lib/config.cjs';
 
 const tuiConfig = configModule.getConfig().tui;
 

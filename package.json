@@ -11,7 +11,7 @@
   "files": [
     "index.js",
     "bin/",
-    "*.cjs",
+    "lib/",
     "config/",
     "tasks/",
     "templates/",

@@ -16,9 +16,9 @@ if (!process.env.HOUND_BUILD_ROOT) {
 // 自动检测：优先本地副本，回退 monorepo 路径
 let cleanPath;
 try {
-  cleanPath = require.resolve(path.join(__dirname, '..', 'clean.cjs'));
+  cleanPath = require.resolve(path.join(__dirname, '..', 'lib', 'clean.cjs'));
 } catch {
-  cleanPath = require.resolve(path.join(__dirname, '..', '..', 'build', 'clean.cjs'));
+  cleanPath = require.resolve(path.join(__dirname, '..', '..', 'build', 'lib', 'clean.cjs'));
 }
 
 require(cleanPath);

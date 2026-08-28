@@ -16,9 +16,9 @@ if (!process.env.HOUND_BUILD_ROOT) {
 // 自动检测：优先本地副本，回退 monorepo 路径
 let iconPath;
 try {
-  iconPath = require.resolve(path.join(__dirname, '..', 'gen-icons.cjs'));
+  iconPath = require.resolve(path.join(__dirname, '..', 'lib', 'gen-icons.cjs'));
 } catch {
-  iconPath = require.resolve(path.join(__dirname, '..', '..', 'build', 'gen-icons.cjs'));
+  iconPath = require.resolve(path.join(__dirname, '..', '..', 'build', 'lib', 'gen-icons.cjs'));
 }
 
 require(iconPath);

@@ -2,7 +2,7 @@ import { createRequire } from 'module';
 import { join } from 'path';
 
 const require = createRequire(import.meta.url);
-const { loadTaskRegistry } = require(join(import.meta.dirname, '..', 'task-runner.cjs'));
+const { loadTaskRegistry } = require(join(import.meta.dirname, '..', '..', 'lib', 'task-runner.cjs'));
 
 /** 任务树节点 */
 class TaskNode {

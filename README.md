@@ -220,6 +220,9 @@ dist/
 
 项目自带一套开箱即用的任务定义（位于 `tasks/` 目录），但你也可以**扩展自定义任务**。
 
+- **平台级任务**（`icon:*` / `build:*` / `build-quick:*` / `collect:*` 与聚合元任务）统一声明在 `tasks/platforms.cjs` 数据表中，新增平台只需在对应数组加一行。
+- **复杂任务**（`android:init` / `android:signing` / `ios:init` / `linux:init` / `test`）保留独立文件 `tasks/*.cjs`。
+
 ### 内置任务依赖图
 
 ```
@@ -231,9 +234,12 @@ build:android → icon:android → android:init
 build:ios  → icon:ios → ios:init
 build:*    → collect:*   （构建后自动收集产物到 dist/）
 
-冲突资源：
-  resource:cross-build   — 防止多个 Rust 编译任务并行
-  resource:tauri-cli     — 防止多个 Tauri CLI 任务并行
+冲突资源（读写锁）：
+  resource:cross-build   — 写锁：防止多个 Rust 编译任务并行（写 src-tauri/target）
+  resource:tauri-cli     — 写锁：防止多个 Tauri CLI 任务并行（改写项目文件）
+  resource:gen-android   — 写锁：android:init / android:signing / icon:android 共享 gen/android
+  resource:gen-ios       — 写锁：ios:init / icon:ios 共享 gen/apple
+  只读任务在 conflicts 中声明 mode:'read'，同资源多任务可并发执行。
 ```
 
 ### Linux 交叉编译
@@ -259,7 +265,10 @@ module.exports = {
   id: 'my-task',                   // 唯一标识
   description: '我的自定义任务',     // TUI 中显示的名称
   dependsOn: ['other-task'],       // 依赖的任务 ID 列表
-  conflicts: ['resource:my-lock'], // 冲突资源名（与同资源任务串行）
+  conflicts: [{                    // 共享资源读写锁声明
+    resource: 'resource:my-lock',  //   资源名
+    mode: 'write',                 //   'write' 写锁（独占，默认）| 'read' 读锁（可并发）
+  }],
   retry: 3,                        // 失败重试次数（默认 3）
   run: {
     cmd: 'echo "Hello Hound!"',    // shell 命令

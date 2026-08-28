@@ -76,5 +76,7 @@ module.exports = {
   id: 'android:signing',
   description: 'android sign',
   dependsOn: ['android:init'],
+  // 改写 gen/android 下的 build.gradle.kts 与 keystore.properties，与 android:init / icon:android 互斥
+  conflicts: [{ resource: 'resource:gen-android', mode: 'write' }],
   run: { fn: configureAndroidSigning },
 };
