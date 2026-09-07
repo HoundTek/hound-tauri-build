@@ -2,6 +2,7 @@
 
 import { taskColor } from '../utils/colors.mjs';
 import { tick } from '../utils/tick.mjs';
+import { theme } from '../utils/theme.mjs';
 
 const ICONS = {
   pending: '\u25CB',
@@ -12,15 +13,12 @@ const ICONS = {
 };
 
 const ICON_COLORS = {
-  pending: '\x1b[90m',
-  running: '\x1b[32m',
-  done:    '\x1b[32m',
-  failed:  '\x1b[31m',
-  skipped: '\x1b[2m',
+  pending: theme.faint,
+  running: theme.ok,
+  done:    theme.ok,
+  failed:  theme.danger,
+  skipped: theme.dim,
 };
-const RST = '\x1b[0m';
-const BOLD = '\x1b[1m';
-const DIM  = '\x1b[2m';
 
 export function fmtTime(ms) {
   if (ms == null) return '';
@@ -49,27 +47,18 @@ export function taskNode(task) {
   const icon = ICONS[task.status] || ICONS.pending;
   let prefix;
   if (task.status === 'running') {
-    // 呼吸动画：10帧循环 dim→dGr→brt→bld→grn→grn→bld→brt→dGr→dim
-    const PULSE = [
-      DIM,       DIM + '\x1b[32m',
-      '\x1b[92m', BOLD + '\x1b[32m',
-      '\x1b[32m', '\x1b[32m',
-      BOLD + '\x1b[32m', '\x1b[92m',
-      DIM + '\x1b[32m', DIM,
-    ];
-    prefix = PULSE[tick % 10] + icon + RST;
+    prefix = theme.PULSE[tick % 10] + icon + theme.reset;
   } else {
     const iconColor = ICON_COLORS[task.status] || ICON_COLORS.pending;
-    prefix = iconColor + icon + RST;
+    prefix = iconColor + icon + theme.reset;
   }
-  const name = taskColor(task.id) + task.description + RST;
+  const name = taskColor(task.id) + task.description + theme.reset;
 
-  const GRAY = '\x1b[90m';
-  const cb = GRAY + (CHECKBOX[task.logFilter ?? 1]) + RST;
+  const cb = theme.faint + (CHECKBOX[task.logFilter ?? 1]) + theme.reset;
 
   let right = '';
   if (task.progress != null) right += ` ${task.progress}`;
   if (task.elapsed != null) right += ` ${fmtTime(task.elapsed)}`;
-  right = right ? GRAY + right + RST : ' ';
+  right = right ? theme.faint + right + theme.reset : ' ';
   return prefix + ' ' + name + ' ' + cb + right;
 }

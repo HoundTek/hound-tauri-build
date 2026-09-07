@@ -1,21 +1,15 @@
 // 日志空间组件（圆角矩形边框的区域）
 
 import { textWidth } from '../utils/text-width.mjs';
-
-const G = '\x1b[36m';
-const N = '\x1b[39m';
+import { padLine } from '../utils/ansi.mjs';
+import { theme } from '../utils/theme.mjs';
 
 const TL = '\u256D'; const TR = '\u256E';
 const BL = '\u2570'; const BR = '\u256F';
 const HZ = '\u2500'; const VT = '\u2502';
 
 /** 给边框行加灰色 */
-function border(s) { return G + s + N; }
-
-function padLine(text, width) {
-  const need = width - textWidth(text);
-  return need > 0 ? text + ' '.repeat(need) : text;
-}
+function border(s) { return theme.info + s + theme.fgDefault; }
 
 export function logSpace(width, height, content) {
   if (width < 2 || height < 2) {
@@ -38,7 +32,7 @@ export function logSpace(width, height, content) {
     const padL = Math.max(0, Math.floor((innerW - textWidth(msg)) / 2));
     for (let y = 0; y < innerH; y++) {
       if (y === Math.floor(innerH / 2)) {
-        rows.push(G + VT + N + '\x1b[41m' + ' '.repeat(padL) + msg + ' '.repeat(Math.max(0, innerW - padL - textWidth(msg))) + '\x1b[0m' + G + VT + N);
+        rows.push(theme.info + VT + theme.fgDefault + theme.dangerBold + theme.rev + padLine(' '.repeat(padL) + msg, innerW) + theme.revOff + theme.reset + theme.info + VT + theme.fgDefault);
       } else {
         rows.push(border(VT + ' '.repeat(innerW) + VT));
       }
@@ -51,7 +45,7 @@ export function logSpace(width, height, content) {
   rows.push(border(TL + HZ.repeat(innerW) + TR));
   for (let y = 0; y < innerH; y++) {
     const line = y < content.length ? padLine(content[y], innerW) : ' '.repeat(innerW);
-    rows.push(G + VT + N + line + G + VT + N);
+    rows.push(theme.info + VT + theme.fgDefault + line + theme.info + VT + theme.fgDefault);
   }
   rows.push(border(BL + HZ.repeat(innerW) + BR));
   return rows;

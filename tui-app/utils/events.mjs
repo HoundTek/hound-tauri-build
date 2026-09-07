@@ -89,6 +89,9 @@ function tryParseKey(buf) {
       const name = CSI_MAP[inner];
       if (name) return { key: { name, sequence: seq }, consumed: end };
 
+      // Shift+Tab: ESC [ Z
+      if (inner === 'Z') return { key: { name: 'tab', shift: true, sequence: seq }, consumed: end };
+
       // 无法识别 → 消费掉，不阻塞
       return { key: { name: 'unknown', sequence: seq }, consumed: end };
     }

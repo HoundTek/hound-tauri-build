@@ -1,9 +1,7 @@
 // 按钮组件：[ Label ] 格式，支持 active/inactive 样式
 
 import { textWidth } from '../utils/text-width.mjs';
-
-const RST = '\x1b[0m';
-const DIM = '\x1b[2m';
+import { theme } from '../utils/theme.mjs';
 
 /**
  * @param {string} label
@@ -16,15 +14,15 @@ export function button(label, opts = {}) {
   let s = '';
 
   if (opts.color && !active) {
-    s += DIM;
+    s += theme.dim;
   } else if (opts.color) {
     s += opts.color;
   } else if (!active) {
-    s += DIM;
+    s += theme.dim;
   }
 
   s += inner;
-  if (!active || opts.color) s += RST;
+  if (!active || opts.color) s += theme.reset;
 
   if (opts.width != null) {
     const need = opts.width - textWidth(inner);

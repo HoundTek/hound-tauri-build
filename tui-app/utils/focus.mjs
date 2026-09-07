@@ -4,6 +4,7 @@
 import { on } from './events.mjs';
 import { treeClick, collectChain } from '../components/tree.mjs';
 import { textWidth } from './text-width.mjs';
+import { skipAnsi, stripAnsi, padLine, PREFIX_W } from './ansi.mjs';
 import { charWidth } from './char-width.mjs';
 
 // ── 只读状态 ───────────────────────────────────────
@@ -13,6 +14,7 @@ export const focusState = {
   treeCursor: 0,      // 树区域光标（绝对内容行索引）
   treeSlot: 0,        // 行内元素索引（0=首个箭头/复选框）
   logCursor: 0,       // 日志光标（绝对内容行索引）
+  logCol: 0,          // 日志光标（视觉列）
   focusVisible: false, // 键盘交互 → true；鼠标交互/初始 → false
 };
 
@@ -26,28 +28,30 @@ export const logSel = {
   endCol: -1,
 };
 
-/** 日志区 vim 模式状态 */
+/** 日志区 vim 模式状态（follow / normal / visual） */
 export const vimMode = {
-  visual: false,     // visual 模式激活（v 进入，Esc/v 退出）
+  mode: 'follow',     // 'follow' | 'normal' | 'visual'
+  count: 0,           // 待执行的数字前缀（如 3j 的 3），0 表示无
 };
+
+/** 日志搜索状态（/ 查找跳转） */
+export const logSearch = {
+  active: false,      // 正在输入查询
+  query: '',
+  lastQuery: '',      // 最近一次提交的查询（n/N 复用）
+  matches: [],        // [{ line, col, len }] 匹配位置（logLines 显示行索引）
+  pos: -1,            // 当前命中的 matches 下标
+};
+
+// 连续溢出检测（模块级，供测试重置）
+export let _consecBoundary = 0;
+export function resetConsecBoundary() { _consecBoundary = 0; }
 
 // ── 渲染辅助 ───────────────────────────────────────
 
-const REV    = '\x1b[7m';  // 反白
-const REV_OFF = '\x1b[27m';
-
-/** 行高亮：反白效果贯穿整行 */
-export function highlightLine(line) {
-  return REV + line + REV_OFF;
-}
-
-/** log 内容前缀宽度：dot/缩进 2 列（▶ 或两个空格），不可选中 */
-const PREFIX_W = 2;
-
-/** 公开：对单行文本的视觉列范围 [colStart, colEnd) 叠加反白效果 */
-export function highlightSlot(line, colStart, colEnd) {
-  return highlightRange(line, colStart, colEnd);
-}
+// highlightRange / highlightSlot / highlightLine / underlineRange / applyLogSelection / applyLogSearch
+// 已提取到 highlight.mjs，此处 re-export 保持向后兼容
+export { highlightLine, highlightSlot, applyLogSelection, applyLogSearch } from './highlight.mjs';
 
 /**
  * 计算树行内所有可交互元素（箭头、复选框），按列排序。
@@ -73,92 +77,6 @@ export function getTreeSlots(lineIdx, markers, lines) {
   return slots;
 }
 
-/**
- * 在单行文本的视觉列范围 [colStart, colEnd) 上叠加反白效果。
- * 范围内部的 ANSI 码被剥离，确保反白效果一致。
- * colEnd 可传 Infinity 表示行尾。
- */
-function highlightRange(line, colStart, colEnd) {
-  if (colStart >= colEnd) return line;
-
-  let result = '';
-  let visCol = 0;
-  let i = 0;
-  let started = false;
-
-  while (i < line.length && visCol < colEnd) {
-    // ── ANSI 转义序列 ──
-    if (line[i] === '\x1b') {
-      const start = i;
-      i++;
-      // OSC 序列: ESC ] ... (BEL 或 ST 终止), 零宽度
-      if (i < line.length && line[i] === ']') {
-        i++;
-        while (i < line.length && line[i] !== '\x07') {
-          if (line[i] === '\x1b' && i + 1 < line.length && line[i + 1] === '\\') { i += 2; break; }
-          i++;
-        }
-        if (i < line.length && line[i] === '\x07') i++;
-        if (!started) result += line.slice(start, i);
-        continue;
-      }
-      if (i < line.length && '[P_^'.includes(line[i])) i++;
-      while (i < line.length && (line[i] < '\x40' || line[i] > '\x7e')) i++;
-      if (i < line.length) i++;
-      // 范围外保留，范围内剥离
-      if (!started) result += line.slice(start, i);
-      continue;
-    }
-    if (line[i] === '\x07') { if (!started) result += line[i]; i++; continue; }
-
-    // ── 普通字符 ──
-    const cw = charWidth(line[i]);
-    if (!started && visCol >= colStart) {
-      result += '\x1b[0m' + REV;
-      started = true;
-    }
-    visCol += cw;
-    result += line[i];
-    i++;
-  }
-
-  if (started) result += REV_OFF;
-  if (i < line.length) result += line.slice(i);
-
-  return result;
-}
-
-/** 在给定的 lines 数组上应用 logSel 选择高亮（仅选中列范围，跳过前缀） */
-export function applyLogSelection(lines) {
-  const sel = logSel;
-  if (!sel.active || sel.startLine < 0 || sel.endLine < 0) return lines;
-
-  const a = Math.min(sel.startLine, sel.endLine);
-  const b = Math.max(sel.startLine, sel.endLine);
-  const single = a === b;
-  const out = lines.slice();
-
-  for (let i = a; i <= b && i < out.length; i++) {
-    let cs = PREFIX_W;
-    let ce = Infinity;
-
-    if (single) {
-      cs = Math.min(sel.startCol, sel.endCol);
-      ce = Math.max(sel.startCol, sel.endCol);
-    } else if (i === a) {
-      // 首行：从该行的起始列到行尾
-      cs = a === sel.startLine ? sel.startCol : sel.endCol;
-    } else if (i === b) {
-      // 末行：从 PREFIX_W 到该行的结束列
-      ce = b === sel.startLine ? sel.startCol : sel.endCol;
-    }
-    // 中间行：cs=PREFIX_W, ce=Infinity → 跳过前缀整行高亮
-
-    out[i] = highlightRange(out[i], cs, ce);
-  }
-  return out;
-}
-
 /** 每帧渲染后调用，确保光标不越界（基于内容绝对索引） */
 export function clampCursors(treeCtx, logCtx) {
   const s = focusState;
@@ -167,10 +85,74 @@ export function clampCursors(treeCtx, logCtx) {
   }
   if (logCtx && logCtx.lineToEntry.length > 0) {
     if (s.logCursor >= logCtx.lineToEntry.length) s.logCursor = Math.max(0, logCtx.lineToEntry.length - 1);
+    // 逻辑列不随行宽截断：实际位置在渲染时取 min(逻辑列, 行末)
   }
 }
 
+/** 日志光标的实际列（状态栏/光标块使用）：逻辑列超过行末时退到行末 */
+export function cursorActualCol(logCtx) {
+  const lines = logCtx && logCtx.logLines;
+  if (!lines || lines.length === 0 || focusState.logCursor < 0 || focusState.logCursor >= lines.length) {
+    return Math.max(0, focusState.logCol);
+  }
+  return Math.min(focusState.logCol, lineWidth(lines[focusState.logCursor]));
+}
+
 // ── 内部工具 ───────────────────────────────────────
+
+/**
+ * 行内容宽度：去除 ANSI 与尾部补齐空白。
+ * wrapLine 会把每行补齐到满宽，vim 的 $ 应落在内容末尾而非补齐空白处。
+ */
+export function lineWidth(line) {
+  return textWidth((line || '').replace(/[ \t]+$/, ''));
+}
+
+/** 重置 vim 状态到 normal 模式 */
+function resetVimToNormal() {
+  vimMode.mode = 'normal';
+  vimMode.count = 0;
+  logSel.active = false;
+}
+
+/** 计算可见区域的行范围（供鼠标点击定位） */
+function getVisibleRange(scrollState, height, totalLines) {
+  const bodyH = totalLines > height ? height - 1 : totalLines;
+  const minIdx = Math.max(0, scrollState.maxIndex - bodyH + 1);
+  return { bodyH, minIdx };
+}
+
+/** 下一个词首（从 col 之后开始，空格分隔的简化 vim 词） */
+function nextWordStart(text, col) {
+  const n = text.length;
+  let i = Math.min(col, n);
+  while (i < n && text[i] === ' ') i++;
+  while (i < n && text[i] !== ' ') i++;
+  while (i < n && text[i] === ' ') i++;
+  return i;
+}
+
+/** 上一个词首（光标在词中时先回到当前词首） */
+function prevWordStart(text, col) {
+  const n = text.length;
+  let i = Math.min(col, n);
+  if (i < n && text[i] !== ' ' && (i === 0 || text[i - 1] !== ' ')) {
+    while (i > 0 && text[i - 1] !== ' ') i--;
+    return i;
+  }
+  while (i > 0 && text[i - 1] === ' ') i--;
+  while (i > 0 && text[i - 1] !== ' ') i--;
+  return i;
+}
+
+/** 当前/下一个词尾 */
+function wordEnd(text, col) {
+  const n = text.length;
+  let i = Math.min(col, n);
+  while (i < n && text[i] === ' ') i++;
+  while (i < n && text[i] !== ' ') i++;
+  return Math.max(col, Math.min(i, n) - 1);
+}
 
 /** 确保光标在可见区域内，否则最小位移滚屏 */
 function ensureCursorVisible(scrollState, height, totalLines, cursor) {
@@ -191,28 +173,13 @@ function findCheckboxes(line) {
   let i = 0;
   const chars = new Set(['\u2610', '\u2611']);
   while (i < line.length) {
-    const ch = line[i];
-    if (chars.has(ch)) {
-      results.push({ col: textWidth(line.slice(0, i)), idx: results.length });
-    }
-    if (line[i] === '\x1b') {
-      i++;
-      // OSC 序列: ESC ] ... (BEL 或 ST 终止)
-      if (line[i] === ']') {
-        i++;
-        while (i < line.length && line[i] !== '\x07') {
-          if (line[i] === '\x1b' && i + 1 < line.length && line[i + 1] === '\\') { i += 2; break; }
-          i++;
-        }
-        if (i < line.length && line[i] === '\x07') i++;
-        continue;
-      }
-      if ('[P_^'.includes(line[i])) i++;
-      while (i < line.length && (line[i] < '\x40' || line[i] > '\x7e')) i++;
-      if (i < line.length) i++;
+    if (line[i] === '\x07' || line[i] === '\x1b') {
+      i = skipAnsi(line, i);
       continue;
     }
-    if (line[i] === '\x07') { i++; continue; }
+    if (chars.has(line[i])) {
+      results.push({ col: textWidth(line.slice(0, i)), idx: results.length });
+    }
     i++;
   }
   return results;
@@ -226,26 +193,28 @@ function findCheckboxes(line) {
  * @param {() => object} opts.getLogCtx   — 返回 { y, height, scrollState, lineToEntry }
  * @param {() => object} opts.getFooterCtx — 返回 { y }
  * @param {object} opts.filterState
- * @param {object} opts.tree              — 树数据（直接修改 logFilter / children）
+ * @param {() => object} opts.getTree      — 返回当前树根节点（惰性获取，避免 reassign 后引用失效）
  * @param {number} [opts.logSelEntryIdx]  — 返回选中条目索引的 getter
  * @param {object} opts.filterRow         — createFilterRow 返回的 { handleKey, handleClick }
  * @param {() => void} opts.onUpdate      — 状态变化后触发重绘
  * @param {(sel: object) => void} [opts.onCopy] — 右键复制回调，传入当前 logSel
  * @param {() => boolean} [opts.isExitPanelVisible] — 退出面板是否可见
+ * @param {() => boolean} [opts.isHelpVisible] — 帮助页是否可见
  */
 export function initFocus(opts) {
   const {
     getTreeCtx, getLogCtx, getFooterCtx,
-    filterState, tree,
+    filterState, getTree,
     logSelEntryIdxRef,
     filterRow,
     onUpdate,
     onCopy,
     onCopyAll,
     isExitPanelVisible,
+    isHelpVisible,
   } = opts;
 
-  const locked = () => isExitPanelVisible && isExitPanelVisible();
+  const locked = () => (isExitPanelVisible && isExitPanelVisible()) || (isHelpVisible && isHelpVisible());
 
   // ── 键盘交互恢复焦点可见性 ──────────────────────
 
@@ -260,18 +229,30 @@ export function initFocus(opts) {
     if (locked()) return;
     if (k.name !== 'tab') return;
     const prev = focusState.focus;
-    const order = ['tree', 'log', 'footer'];
-    const idx = order.indexOf(focusState.focus);
-    focusState.focus = k.shift
-      ? order[(idx + 2) % 3]
-      : order[(idx + 1) % 3];
+    // 焦点顺序：tree → log（Vim模式）→ Follow/Vim按钮 → footer
+    // （Copy 按钮仅通过 h/l 从 Follow 按钮切换到达，不参与 Tab 循环）
+    const order = vimMode.mode === 'follow'
+      ? ['tree', 'log-follow-btn', 'footer']
+      : ['tree', 'log', 'log-follow-btn', 'footer'];
+    let idx = order.indexOf(focusState.focus);
+    if (idx < 0) idx = 0;
+    if (k.shift) {
+      idx = (idx - 1 + order.length) % order.length;
+    } else {
+      idx = (idx + 1) % order.length;
+    }
+    focusState.focus = order[idx];
     if (prev === 'footer' && focusState.focus !== 'footer' && filterRow) {
       filterRow.exitEditing();
     }
     if (prev === 'log' && focusState.focus !== 'log') {
-      // 离开日志区时退出 vim visual 选区
-      vimMode.visual = false;
+      vimMode.mode = 'normal';
+      vimMode.count = 0;
       logSel.active = false;
+      logSearch.active = false;
+      logSearch.query = '';
+      logSearch.matches = [];
+      logSearch.pos = -1;
     }
     onUpdate();
   });
@@ -312,11 +293,11 @@ export function initFocus(opts) {
       onUpdate(); return;
     }
 
-    // ←/→ → 行内元素导航（同时确保光标在视图内）
-    if (k.name === 'left' || k.name === 'right') {
+    // ←/→/h/l → 行内元素导航（同时确保光标在视图内）
+    if (k.name === 'left' || k.name === 'right' || k.name === 'h' || k.name === 'l') {
       const lineIdx = s.treeCursor;
       const slots = getTreeSlots(lineIdx, ctx.markers, ctx.lines);
-      if (k.name === 'left') {
+      if (k.name === 'left' || k.name === 'h') {
         s.treeSlot = Math.max(0, s.treeSlot - 1);
       } else {
         s.treeSlot = Math.min(slots.length - 1, Math.max(0, s.treeSlot + 1));
@@ -352,9 +333,11 @@ export function initFocus(opts) {
     }
   });
 
-  // ── 日志（含简易 vim 模式） ──────────────────────
+  // ── 日志（vim 只读模式：follow / normal / visual） ──
 
   let _lastGTime = 0; // gg 双击判定
+  let _lastYTime = 0; // yy 双击判定
+  let _searchRestore = null; // / 搜索激活时的光标恢复点
 
   on('key', (k) => {
     if (locked()) return;
@@ -362,105 +345,456 @@ export function initFocus(opts) {
     const ctx = getLogCtx();
     if (!ctx || !ctx.scrollState) return;
     const s = focusState;
+    const total = ctx.lineToEntry.length;
+
+    // Follow → Normal/Visual：任意 vim 键触发模式切换
+    if (vimMode.mode === 'follow' && !k.consumed) {
+      vimMode.mode = 'normal';
+    }
 
     // visual 激活时，选区终点跟随光标移动
-    function syncVisualEnd(line) {
-      if (!vimMode.visual) return;
-      logSel.endLine = line;
-      logSel.endCol = Infinity;
+    function syncVisual() {
+      if (vimMode.mode === 'normal' || vimMode.mode === 'follow') return;
+      logSel.endLine = s.logCursor;
+      logSel.endCol = actualCol();
       logSel.active = true;
     }
 
-    // ── 光标移动（normal + visual）──
-    let target = null;
-    if (k.name === 'up' || k.name === 'k') {
-      target = Math.max(0, s.logCursor - 1);
-    } else if (k.name === 'down' || k.name === 'j') {
-      target = Math.min(ctx.lineToEntry.length - 1, s.logCursor + 1);
-    } else if (k.name === 'home') {
-      target = 0;
-    } else if (k.name === 'end') {
-      target = ctx.lineToEntry.length - 1;
-    }
-    if (target !== null) {
-      if (ctx.lineToEntry.length === 0) return;
-      s.logCursor = target;
-      ensureCursorVisible(ctx.scrollState, ctx.height, ctx.lineToEntry.length, s.logCursor);
-      syncVisualEnd(s.logCursor);
-      onUpdate(); return;
+    /** 当前行内容宽度 */
+    function curLineWidth() {
+      return lineWidth(ctx.logLines[s.logCursor]);
     }
 
-    // ── gg / G：跳到顶部 / 底部 ──
+    /** 实际列：逻辑列超过行末时退到行末（渲染/状态栏/选区使用） */
+    function actualCol() {
+      return Math.min(s.logCol, curLineWidth());
+    }
+
+    /**
+     * 移动到指定行/列（纵向移动保留逻辑列，不随行宽截断；滚屏可见 + visual 同步）。
+     * 横向移动由调用方保证 col 在当前行范围内，逻辑列与实际列同步。
+     */
+    function moveTo(line, col) {
+      if (total === 0) return;
+      s.logCursor = Math.min(total - 1, Math.max(0, line));
+      if (typeof col === 'number' && col >= 0) s.logCol = col;
+      ensureCursorVisible(ctx.scrollState, ctx.height, total, s.logCursor);
+      syncVisual();
+      onUpdate();
+    }
+
+    /** 当前行纯文本（用于词移动） */
+    function curText() {
+      return stripAnsi(ctx.logLines[s.logCursor] || '');
+    }
+
+    /** 消费 pending count（无则 1），并清零 */
+    function takeCount() {
+      const n = vimMode.count || 1;
+      vimMode.count = 0;
+      return n;
+    }
+
+    /** 按当前 query 重算匹配列表和当前位置（不跳转光标） */
+    function recomputeSearch() {
+      const q = logSearch.query.toLowerCase();
+      logSearch.matches = [];
+      logSearch.pos = -1;
+      if (q) {
+        for (let li = 0; li < ctx.logLines.length; li++) {
+          const text = stripAnsi(ctx.logLines[li]).toLowerCase();
+          let idx = text.indexOf(q);
+          while (idx >= 0) {
+            logSearch.matches.push({ line: li, col: idx, len: q.length });
+            idx = text.indexOf(q, idx + q.length);
+          }
+        }
+      }
+      findCurrentPos();
+      onUpdate();
+    }
+
+    /** 计算当前匹配位置（光标之后最近的匹配，回绕） */
+    function findCurrentPos() {
+      const m = logSearch.matches;
+      if (!m.length) { logSearch.pos = -1; return; }
+      const cur = s.logCursor;
+      for (let i = 0; i < m.length; i++) {
+        if (m[i].line > cur || (m[i].line === cur && m[i].col >= s.logCol)) { logSearch.pos = i; return; }
+      }
+      logSearch.pos = 0; // 回绕到第一个匹配
+    }
+
+    /** 从当前位置向后(dir>0)/向前(dir<0)跳转匹配（回绕） */
+    function jumpSearch(dir) {
+      const m = logSearch.matches;
+      if (!m.length) return;
+      const cur = s.logCursor;
+      let next = -1;
+      if (dir > 0) {
+        for (let i = 0; i < m.length; i++) {
+          if (m[i].line > cur || (m[i].line === cur && m[i].col > s.logCol)) { next = i; break; }
+        }
+        if (next < 0) next = 0;
+      } else {
+        for (let i = m.length - 1; i >= 0; i--) {
+          if (m[i].line < cur || (m[i].line === cur && m[i].col < s.logCol)) { next = i; break; }
+        }
+        if (next < 0) next = m.length - 1;
+      }
+      logSearch.pos = next;
+      moveTo(m[next].line, m[next].col);
+    }
+
+    /** 取消搜索并恢复光标 */
+    function cancelSearch() {
+      logSearch.active = false;
+      logSearch.query = '';
+      logSearch.matches = [];
+      logSearch.pos = -1;
+      if (_searchRestore) {
+        moveTo(_searchRestore.line, _searchRestore.col);
+        _searchRestore = null;
+      } else {
+        onUpdate();
+      }
+    }
+
+    // ── 数字前缀（vim count）：0 在有 pending count 时为数字，否则为行首 ──
+    if (!k.ctrl && !k.meta && /^[1-9]$/.test(k.name)) {
+      vimMode.count = vimMode.count * 10 + parseInt(k.name, 10);
+      onUpdate();
+      return;
+    }
+    if (!k.ctrl && !k.meta && k.name === '0') {
+      if (vimMode.count > 0) {
+        // 有 pending count 时 0 是数字（如 10j）
+        vimMode.count = vimMode.count * 10;
+        onUpdate();
+      } else {
+        // 无 pending count 时 0 = 行首
+        moveTo(s.logCursor, PREFIX_W);
+      }
+      return;
+    }
+
+    // ── ESC：退出跟随 / 搜索 / 清除 count（其余交给 bindExitPanel） ──
+    if (k.name === 'escape') {
+      if (vimMode.mode === 'follow') {
+        vimMode.mode = 'normal'; k.consumed = true; onUpdate(); return;
+      }
+      if (logSearch.active) {
+        k.consumed = true;
+        cancelSearch();
+        return;
+      }
+      if (vimMode.count > 0) {
+        vimMode.count = 0;
+        k.consumed = true; // 只吞掉“清除数字前缀”这次 ESC，避免误弹退出面板
+        onUpdate();
+      }
+      return;
+    }
+
+    // ── / 搜索：激活输入（normal 模式） ──
+    if (!k.ctrl && !k.meta && k.name === '/' && vimMode.mode === 'normal') {
+      logSearch.active = true;
+      logSearch.query = '';
+      _searchRestore = { line: s.logCursor, col: s.logCol };
+      logSearch.matches = [];
+      logSearch.pos = -1;
+      onUpdate();
+      return;
+    }
+
+    // ── 搜索输入中：只处理查询编辑 ──
+    if (logSearch.active) {
+      if (k.name === 'escape' || (k.ctrl && k.name === 'c')) {
+        k.consumed = true;
+        cancelSearch();
+        return;
+      }
+      if (k.name === 'backspace') {
+        logSearch.query = logSearch.query.slice(0, -1);
+        recomputeSearch();
+        return;
+      }
+      if (k.name === 'return' || k.name === 'enter') {
+        logSearch.active = false;
+        logSearch.lastQuery = logSearch.query;
+        logSearch.query = '';
+        if (!logSearch.lastQuery) { logSearch.matches = []; logSearch.pos = -1; _searchRestore = null; onUpdate(); }
+        else if (logSearch.matches.length) { jumpSearch(1); }
+        else { onUpdate(); }
+        return;
+      }
+      if (k.name.length === 1 && !k.ctrl && !k.meta) {
+        logSearch.query += k.name;
+        recomputeSearch();
+        return;
+      }
+      return; // 搜索输入中忽略其他按键
+    }
+
+    // ── n / N：下一个 / 上一个匹配 ──
+    if (!k.ctrl && !k.meta && (k.name === 'n' || k.name === 'N') && logSearch.lastQuery) {
+      logSearch.query = logSearch.lastQuery;
+      recomputeSearch();
+      if (logSearch.matches.length) jumpSearch(k.name === 'n' ? 1 : -1);
+      return;
+    }
+
+    // ── 上下移动（normal + visual 共用，支持数字前缀） ──
+    if (k.name === 'up' || k.name === 'k') {
+      const n = takeCount(); moveTo(s.logCursor - n);
+      _consecBoundary = 0;
+      return;
+    }
+    if (k.name === 'down' || k.name === 'j') {
+      const n = takeCount();
+      moveTo(s.logCursor + n);
+      // moveTo 后检测：光标在末行且视觉位置在行末
+      if (s.logCursor >= total - 1 && actualCol() >= curLineWidth()) {
+        _consecBoundary++;
+        if (_consecBoundary >= 2 && vimMode.mode !== 'follow') {
+          vimMode.mode = 'follow'; vimMode.count = 0;
+          logSel.active = false;
+          const lastW = lineWidth(ctx.logLines[total - 1] || '');
+          moveTo(total - 1, Math.max(PREFIX_W, lastW));
+        }
+      } else {
+        _consecBoundary = 0;
+        if (vimMode.mode === 'follow') vimMode.mode = 'normal';
+      }
+      return;
+    }
+
+    // ── 左右移动（基于实际列，钳制在 [PREFIX_W, lineWidth]） ──
+    if (k.name === 'left' || k.name === 'h') {
+      const n = takeCount(); moveTo(s.logCursor, Math.max(PREFIX_W, actualCol() - n));
+      _consecBoundary = 0;
+      if (vimMode.mode === 'follow') vimMode.mode = 'normal';
+      return;
+    }
+    if (k.name === 'right' || k.name === 'l') {
+      const n = takeCount();
+      moveTo(s.logCursor, Math.min(curLineWidth(), actualCol() + n));
+      if (s.logCursor >= total - 1 && actualCol() >= curLineWidth()) {
+        _consecBoundary++;
+        if (_consecBoundary >= 2 && vimMode.mode !== 'follow') {
+          vimMode.mode = 'follow'; vimMode.count = 0;
+          logSel.active = false;
+          const lastW = lineWidth(ctx.logLines[total - 1] || '');
+          moveTo(total - 1, Math.max(PREFIX_W, lastW));
+        }
+      } else {
+        _consecBoundary = 0;
+        if (vimMode.mode === 'follow') vimMode.mode = 'normal';
+      }
+      return;
+    }
+
+    // ── 行内定位：^ / $ ──
+    if (k.name === '^') {
+      takeCount();
+      const t = curText();
+      const first = t.search(/\S/);
+      moveTo(s.logCursor, first < 0 ? PREFIX_W : Math.max(PREFIX_W, first));
+      return;
+    }
+    if (k.name === '$') {
+      takeCount();
+      moveTo(s.logCursor, curLineWidth());
+      return;
+    }
+
+    // ── 词移动：w / b / e（支持数字前缀） ──
+    if (k.name === 'w') {
+      const n = takeCount();
+      let col = s.logCol;
+      for (let t = 0; t < n; t++) col = nextWordStart(curText(), col);
+      moveTo(s.logCursor, col);
+      return;
+    }
+    if (k.name === 'b') {
+      const n = takeCount();
+      let col = s.logCol;
+      for (let t = 0; t < n; t++) col = prevWordStart(curText(), col);
+      moveTo(s.logCursor, col);
+      return;
+    }
+    if (k.name === 'e') {
+      const n = takeCount();
+      let col = s.logCol;
+      for (let t = 0; t < n; t++) col = wordEnd(curText(), col);
+      moveTo(s.logCursor, col);
+      return;
+    }
+
+    // ── home / end / gg / G：跳到顶部 / 底部 ──
+    if (k.name === 'home') { takeCount(); moveTo(0, s.logCol); return; }
+    if (k.name === 'end') { takeCount(); moveTo(total - 1, s.logCol); return; }
     if (!k.ctrl && !k.meta && k.name === 'g') {
+      const n = vimMode.count;
+      if (n > 0) { vimMode.count = 0; moveTo(Math.min(total - 1, n - 1), 0); return; }
       const now = Date.now();
       if (_lastGTime && now - _lastGTime < 500) {
         _lastGTime = 0;
-        if (ctx.lineToEntry.length === 0) return;
-        s.logCursor = 0;
-        ensureCursorVisible(ctx.scrollState, ctx.height, ctx.lineToEntry.length, s.logCursor);
-        syncVisualEnd(0);
-        onUpdate(); return;
+        moveTo(0, s.logCol);
+        return;
       }
       _lastGTime = now;
       return;
     }
     if (!k.ctrl && !k.meta && k.name === 'G') {
-      if (ctx.lineToEntry.length === 0) return;
-      s.logCursor = ctx.lineToEntry.length - 1;
-      ensureCursorVisible(ctx.scrollState, ctx.height, ctx.lineToEntry.length, s.logCursor);
-      syncVisualEnd(s.logCursor);
-      onUpdate(); return;
+      const n = vimMode.count;
+      vimMode.count = 0;
+      moveTo(n > 0 ? Math.min(total - 1, n - 1) : total - 1, s.logCol);
+      return;
     }
 
-    // ── Ctrl+d / Ctrl+u：半页滚动 ──
+    // ── 整页/半页滚动：Ctrl+f / Ctrl+b / PageDown / PageUp / Ctrl+d / Ctrl+u ──
+    if (k.ctrl && (k.name === 'f' || k.name === 'b')) {
+      const step = takeCount() * Math.max(1, (ctx.height || 10) - 1);
+      const dir = k.name === 'f' ? 1 : -1;
+      if (total === 0) return;
+      if (total <= ctx.height) {
+        moveTo(dir > 0 ? total - 1 : 0, s.logCol);
+      } else {
+        const bodyH = ctx.height - 1;
+        if (dir > 0) {
+          const newMax = Math.min(total - 1, ctx.scrollState.maxIndex + step);
+          ctx.scrollState.maxIndex = newMax;
+          moveTo(newMax, s.logCol);
+        } else {
+          const newMax = Math.max(ctx.height - 2, ctx.scrollState.maxIndex - step);
+          ctx.scrollState.maxIndex = newMax;
+          moveTo(Math.max(0, newMax - bodyH + 1), s.logCol);
+        }
+      }
+      return;
+    }
+    if (k.name === 'pagedown' || k.name === 'pageup') {
+      const step = takeCount() * Math.max(1, (ctx.height || 10) - 1);
+      const dir = k.name === 'pagedown' ? 1 : -1;
+      if (total === 0) return;
+      if (total <= ctx.height) {
+        moveTo(dir > 0 ? total - 1 : 0, s.logCol);
+      } else {
+        const bodyH = ctx.height - 1;
+        if (dir > 0) {
+          const newMax = Math.min(total - 1, ctx.scrollState.maxIndex + step);
+          ctx.scrollState.maxIndex = newMax;
+          moveTo(newMax, s.logCol);
+        } else {
+          const newMax = Math.max(ctx.height - 2, ctx.scrollState.maxIndex - step);
+          ctx.scrollState.maxIndex = newMax;
+          moveTo(Math.max(0, newMax - bodyH + 1), s.logCol);
+        }
+      }
+      return;
+    }
     if (k.ctrl && (k.name === 'd' || k.name === 'u')) {
-      if (ctx.lineToEntry.length === 0) return;
-      const step = Math.max(1, Math.floor((ctx.height || 10) / 2));
+      const step = takeCount() * Math.max(1, Math.floor((ctx.height || 10) / 2));
       const dir = k.name === 'd' ? 1 : -1;
-      s.logCursor = Math.min(ctx.lineToEntry.length - 1, Math.max(0, s.logCursor + dir * step));
-      ensureCursorVisible(ctx.scrollState, ctx.height, ctx.lineToEntry.length, s.logCursor);
-      syncVisualEnd(s.logCursor);
-      onUpdate(); return;
+      moveTo(s.logCursor + dir * step, s.logCol);
+      return;
     }
 
     // ── v：进入 / 退出 visual 模式 ──
     if (!k.ctrl && !k.meta && k.name === 'v') {
-      if (ctx.lineToEntry.length === 0) return;
-      if (vimMode.visual) {
-        vimMode.visual = false;
+      if (total === 0) return;
+      vimMode.count = 0;
+      if (vimMode.mode === 'visual') {
+        vimMode.mode = 'normal';
         logSel.active = false;
       } else {
-        vimMode.visual = true;
+        vimMode.mode = 'visual';
         logSel.active = true;
         logSel.startLine = s.logCursor;
-        logSel.startCol = PREFIX_W;
+        logSel.startCol = actualCol();
         logSel.endLine = s.logCursor;
-        logSel.endCol = Infinity;
+        logSel.endCol = actualCol();
       }
       onUpdate(); return;
     }
 
     if (k.name === 'return' || k.name === 'space') {
-      // log 区域 Enter/Space 暂无操作
+      // log 区域 Enter/Space 暂无操作（只读）
     }
 
-    // ── 复制选中文本 ──
-    // Ctrl+C / Ctrl+Shift+C (组合键) 或 y (vim 风格)
-    const isCopyKey =
-      (k.ctrl && (k.name === 'c' || (k.name === 'right' && k.shift)))  // Ctrl+C / Ctrl+Shift+C
-      || (!k.ctrl && !k.meta && k.name === 'y');                        // y (vim yank)
-    if (isCopyKey && logSel.active && onCopy) {
-      onCopy({ ...logSel });
+    // ── q：退出 visual 模式 ──
+    if (!k.ctrl && !k.meta && k.name === 'q' && vimMode.mode !== 'normal') {
+      vimMode.mode = 'normal';
       logSel.active = false;
-      vimMode.visual = false;
       onUpdate();
       return;
     }
-    // ── c：复制当前筛选视图下的全部日志（无选中时） ──
-    if (!k.ctrl && !k.meta && k.name === 'c' && onCopyAll) {
+
+    // ── y / yy：yank 复制 ──
+    if (!k.ctrl && !k.meta && k.name === 'y') {
+      vimMode.count = 0;
+      if (vimMode.mode !== 'normal') {
+        // visual 中 y → 复制选区
+        if (logSel.active && onCopy) {
+          k.consumed = true;
+          onCopy({ ...logSel });
+          logSel.active = false;
+          vimMode.mode = 'normal';
+          onUpdate();
+        }
+        return;
+      }
+      // normal 中 yy → 复制当前行
+      const now = Date.now();
+      if (_lastYTime && now - _lastYTime < 500) {
+        _lastYTime = 0;
+        if (onCopy) {
+          k.consumed = true;
+          onCopy({ active: true, startLine: s.logCursor, endLine: s.logCursor, startCol: PREFIX_W, endCol: Infinity });
+          onUpdate();
+        }
+        return;
+      }
+      _lastYTime = now;
+      return;
+    }
+
+    // ── Ctrl+C / Ctrl+Shift+C：复制选中文本 ──
+    const isCopyKey = k.ctrl && (k.name === 'c' || (k.name === 'right' && k.shift));
+    if (isCopyKey && logSel.active && onCopy) {
+      k.consumed = true;
+      onCopy({ ...logSel });
+      logSel.active = false;
+      vimMode.mode = 'normal';
+      onUpdate();
+      return;
+    }
+    // ── c：复制当前筛选视图下的全部日志（normal 模式、无选中时） ──
+    if (!k.ctrl && !k.meta && k.name === 'c' && vimMode.mode === 'normal' && onCopyAll) {
+      vimMode.count = 0;
       onCopyAll();
       onUpdate();
       return;
+    }
+  });
+
+  // ── 日志状态栏按钮焦点：左右箭头切换 ──
+  on('key', (k) => {
+    if (locked()) return;
+    if (focusState.focus === 'log-follow-btn' || focusState.focus === 'log-copy-btn') {
+      if (k.name === 'left' || k.name === 'h') {
+        focusState.focus = 'log-follow-btn';
+        onUpdate(); return;
+      }
+      if (k.name === 'right' || k.name === 'l') {
+        focusState.focus = 'log-copy-btn';
+        onUpdate(); return;
+      }
+      if (k.name === 'return' || k.name === 'space') {
+        // Enter/Space 触发按钮动作（由 demos 处理）
+        onUpdate(); return;
+      }
     }
   });
 
@@ -522,6 +856,16 @@ export function initFocus(opts) {
       }
     }
 
+    // 日志区点击 → normal 模式
+    const logCtx = getLogCtx();
+    if (logCtx && logCtx.scrollState && e.y >= logCtx.y && e.y < logCtx.y + logCtx.height) {
+      if (vimMode.mode !== 'normal') {
+        vimMode.mode = 'normal';
+        onUpdate();
+      }
+      return;
+    }
+
     // footer
     if (footerCtx && e.y === footerCtx.y) {
       focusState.focus = 'footer';
@@ -545,6 +889,11 @@ export function initFocus(opts) {
     const wasFooter = focusState.focus === 'footer';
     focusState.focus = 'log';
     if (wasFooter && filterRow) filterRow.exitEditing();
+    // 拖拽 → visual 模式
+    if (vimMode.mode !== 'visual') {
+      vimMode.mode = 'visual';
+      vimMode.count = 0;
+    }
     const bodyH = ctx.lineToEntry.length > ctx.height ? ctx.height - 1 : ctx.lineToEntry.length;
     const minIdx = Math.max(0, ctx.scrollState.maxIndex - bodyH + 1);
     const lineIdx = minIdx + (e.y - ctx.y);
@@ -552,6 +901,7 @@ export function initFocus(opts) {
 
     focusState.logCursor = lineIdx;
     const col = Math.max(PREFIX_W, e.x - 1); // 减去边框 1 列，跳过前缀
+    focusState.logCol = col;
     _dragStart = { line: lineIdx, col };
     logSel.selecting = true;
     logSel.active = false;
@@ -559,7 +909,7 @@ export function initFocus(opts) {
     logSel.endLine = lineIdx;
     logSel.startCol = col;
     logSel.endCol = col;
-    vimMode.visual = false; // 鼠标拖拽选区会覆盖 vim visual 选区
+    vimMode.mode = 'normal'; // 鼠标拖拽选区会覆盖 vim visual 选区
     onUpdate();
   });
 

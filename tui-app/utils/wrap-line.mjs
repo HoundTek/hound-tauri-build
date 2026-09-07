@@ -1,7 +1,8 @@
 import { charWidth } from './char-width.mjs';
+import { skipAnsi } from './ansi.mjs';
 
 export function wrapLine(text, width) {
-/*
+/**
 文本换行函数
 @param {string} text - 待换行的文本
 @param {number} width - 换行宽度
@@ -41,33 +42,22 @@ ANSI/CSI/OSC/BEL/ST/DCS/PM/APC控制符等，
     // ESC 序列
     if (text[i] === '\x1b') {
       const start = i;
-      i++;
-      // OSC 序列: ESC ] ... (BEL 或 ST 终止), 零宽度，直通输出
-      if (text[i] === ']') {
-        i++;
-        while (i < text.length && text[i] !== '\x07') {
-          if (text[i] === '\x1b' && i + 1 < text.length && text[i + 1] === '\\') { i += 2; break; }
-          i++;
-        }
-        if (i < text.length && text[i] === '\x07') i++; // consume BEL
-        const seq = text.slice(start, i);
-        // 解析 OSC 8 超链接：\x1b]8;[params;]url\x07
+      i = skipAnsi(text, i);
+      const seq = text.slice(start, i);
+
+      // OSC 序列解析：追踪 OSC 8 超链接状态
+      if (seq.startsWith('\x1b]')) {
         const m = seq.match(/^\x1b\]8;[^;\x07]*;([^\x07]*)\x07$/);
-        if (m) {
-          oscUrl = m[1] || null;  // 空 URL 表示关闭超链接
-        }
+        if (m) oscUrl = m[1] || null;  // 空 URL 表示关闭超链接
         cur += seq;
         continue;
       }
-      if ('[P_^'.includes(text[i])) i++;
-      while (i < text.length && (text[i] < '\x40' || text[i] > '\x7e')) i++;
-      if (i < text.length) i++;
-      const seq = text.slice(start, i);
+
       // SGR 序列追踪活跃样式
       if (/^\x1b\[\d*(;\d+)*m$/.test(seq)) {
         sgr = (seq === '\x1b[0m' || seq === '\x1b[m') ? '' : seq;
-        cur += seq;
       }
+      cur += seq;
       continue;
     }
 

@@ -2,11 +2,11 @@
 
 import net from 'net';
 import configModule from '../lib/config.cjs';
-import { makePage, running, toggleFinished, setScrollCallback, isFooterEditing, exitPanel,
-         initFromTasks, onTaskStatus, onLogEntry, onBuildExit } from './demos/index.mjs';
+import { makePage, running, toggleFinished, setScrollCallback, isFooterEditing, exitPanel, helpPanel,
+         initFromTasks, onTaskStatus, onLogEntry, onBuildExit } from './pages/index.mjs';
 import { initEvents, on, destroyEvents } from './utils/events.mjs';
 import { advanceTick } from './utils/tick.mjs';
-import { logSel, vimMode } from './utils/focus.mjs';
+import { logSel, vimMode, logSearch } from './utils/focus.mjs';
 import { getTerminalSize, initTerminalSize, updateTerminalSize } from './utils/terminal-size.mjs';
 
 const tuiConfig = configModule.getConfig().tui;
@@ -59,14 +59,31 @@ function requestRedraw() {
 
 function bindExitPanel() {
   on('key', (k) => {
+    // 已被下层处理器消费（如日志区复制）的按键不再触发退出逻辑
+    if (k.consumed) return;
+
+    // ? / F1：切换帮助页（exitPanel 展开 / footer 编辑 / 搜索输入时不响应）
+    if ((k.name === '?' || k.name === 'f1') && !exitPanel.visible
+        && !isFooterEditing() && !logSearch.active) {
+      helpPanel.visible = !helpPanel.visible;
+      requestRedraw();
+      return;
+    }
+
     const isExitKey = k.name === 'escape' || (k.ctrl && k.name === 'c' && !logSel.active);
     if (isExitKey) {
       if (isFooterEditing()) return;
+      if (helpPanel.visible) {
+        // 帮助页展开时 ESC 只关闭帮助页，不触发退出
+        helpPanel.visible = false;
+        requestRedraw();
+        return;
+      }
       if (logSel.active) {
         logSel.active = false;
         logSel.startLine = -1;
         logSel.endLine = -1;
-        vimMode.visual = false;
+        vimMode.mode = 'normal';
         requestRedraw();
         return;
       }

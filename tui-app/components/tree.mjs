@@ -65,35 +65,25 @@ export function walkTree(node, opts = {}) {
     // 链压缩
     const chain = collectChain(n);
     if (chain.length > 1) {
-      // 链末节点是叶子 → 整条链不显示展开/折叠箭头
+      // 折叠单链：只显示最左侧一个展开/折叠按钮，其余节点纯文本
       const tail = chain[chain.length - 1];
       const tailIsLeaf = !tail.children || tail.children.length === 0;
 
-      const parts = chain.map((cn) => {
-        if (tailIsLeaf) return render(cn);
-        const m = cn.children.length > 0 && !cn.collapsed ? ARROW_EXPAND :
-                  cn.children.length > 0 ? ARROW_COLLAPSE : '';
+      const parts = chain.map((cn, i) => {
+        const m = i === 0 ? (cn.collapsed ? ARROW_COLLAPSE : ARROW_EXPAND) : '';
         return m + render(cn);
       });
       const line = prefix + conn + parts.join(` ${G}/${R} `);
       lines.push(line);
       nodeAtLine.push(chain[0]);
 
-      // 链末是叶子 → 无标记；否则按常规收集
-      const lineMarkers = [];
-      if (!tailIsLeaf) {
-        let offset = textWidth(prefix) + textWidth(conn);
-        for (const cn of chain) {
-          const hasSub = cn.children && cn.children.length > 0;
-          const m = hasSub ? (cn.collapsed ? ARROW_COLLAPSE : ARROW_EXPAND) : '';
-          const mw = textWidth(m);
-          if (m) {
-            lineMarkers.push({ node: cn, col: offset, width: mw });
-          }
-          offset += mw + textWidth(render(cn));
-          offset += 3; // ' / '
-        }
-      }
+      // 仅链首节点收集 toggle 标记
+      const first = chain[0];
+      const hasSub = first.children && first.children.length > 0;
+      const fm = hasSub ? (first.collapsed ? ARROW_COLLAPSE : ARROW_EXPAND) : '';
+      const lineMarkers = fm
+        ? [{ node: first, col: textWidth(prefix) + textWidth(conn), width: textWidth(fm) }]
+        : [];
       markers.push(lineMarkers.length > 0 ? lineMarkers : null);
 
       // 展开尾部子节点（叶子则跳过）

@@ -6,40 +6,26 @@ import { button } from './button.mjs';
 import { hLayout } from './h-layout.mjs';
 import { toggleLevel } from './filter-bar.mjs';
 import { charWidth } from '../utils/char-width.mjs';
+import { textWidth } from '../utils/text-width.mjs';
+import { skipAnsi } from '../utils/ansi.mjs';
+import { theme } from '../utils/theme.mjs';
 
 const LEVELS = ['success', 'warning', 'info', 'error', 'log'];
-const COLORS = { success: '\x1b[32m', warning: '\x1b[33m', info: '\x1b[36m', error: '\x1b[31m', log: '\x1b[36m' };
+const COLORS = { success: theme.ok, warning: theme.warn, info: theme.info, error: theme.danger, log: theme.info };
 const LABELS = { success: 'Success', warning: 'Warning', info: 'Info', error: 'Error', log: 'Log' };
 const NUM_LEVELS = LEVELS.length; // 5
 const SEARCH_IDX = NUM_LEVELS;    // 第 6 项（搜索框）
 const SEARCH_MIN = 14;
-
-const DIM = '\x1b[2m';
-const RST = '\x1b[0m';
 
 /** 在含 ANSI 码的行中，找到视觉列位置 visX 对应的字符偏移 */
 function visToCharIdx(line, visX) {
   let charIdx = 0;
   let visW = 0;
   while (charIdx < line.length && visW < visX) {
-    if (line[charIdx] === '\x1b') {
-      charIdx++;
-      // OSC 序列: ESC ] ... (BEL 或 ST 终止)
-      if (line[charIdx] === ']') {
-        charIdx++;
-        while (charIdx < line.length && line[charIdx] !== '\x07') {
-          if (line[charIdx] === '\x1b' && charIdx + 1 < line.length && line[charIdx + 1] === '\\') { charIdx += 2; break; }
-          charIdx++;
-        }
-        if (charIdx < line.length && line[charIdx] === '\x07') charIdx++;
-        continue;
-      }
-      if ('[P_^'.includes(line[charIdx])) charIdx++;
-      while (charIdx < line.length && (line[charIdx] < '\x40' || line[charIdx] > '\x7e')) charIdx++;
-      if (charIdx < line.length) charIdx++;
+    if (line[charIdx] === '\x07' || line[charIdx] === '\x1b') {
+      charIdx = skipAnsi(line, charIdx);
       continue;
     }
-    if (line[charIdx] === '\x07') { charIdx++; continue; }
     visW += charWidth(line[charIdx]);
     charIdx++;
   }
@@ -55,22 +41,22 @@ function renderSearch(active, query, editMode, width) {
   const inner = width - 2; // │ + 空格
 
   if (editMode) {
-    const cursor = '\x1b[7m\u258C\x1b[27m'; // ▌ 左半块光标
+    const cursor = theme.rev + '\u258C' + theme.revOff; // ▌ 左半块光标
     const maxText = inner - 1; // 留光标位置
     const text = query ? query.slice(-maxText) : '';
     const pad = maxText - text.length;
-    return DIM + '\u2502' + RST + ' ' + text + cursor + ' '.repeat(Math.max(0, pad));
+    return theme.dim + '\u2502' + theme.reset + ' ' + text + cursor + ' '.repeat(Math.max(0, pad));
   }
 
   if (query) {
     const text = query.slice(-inner);
     const pad = inner - text.length;
-    const style = active ? RST : DIM;
-    return DIM + '\u2502' + RST + ' ' + style + text + ' '.repeat(Math.max(0, pad)) + RST;
+    const style = active ? theme.reset : theme.dim;
+    return theme.dim + '\u2502' + theme.reset + ' ' + style + text + ' '.repeat(Math.max(0, pad)) + theme.reset;
   }
 
   // 无内容: 灰色占位
-  return DIM + '\u2502' + RST + ' ' + DIM + 'filter\u2026' + ' '.repeat(Math.max(0, inner - 7)) + RST;
+  return theme.dim + '\u2502' + theme.reset + ' ' + theme.dim + 'filter\u2026' + ' '.repeat(Math.max(0, inner - 7)) + theme.reset;
 }
 
 /**
@@ -81,8 +67,8 @@ export function createFilterRow(filterState, onUpdate) {
   let focusedIdx = 0;
   let editing = false;
 
-  /** 构建 hLayout items，搜索宽度填充剩余空间 */
-  function buildItems(totalWidth) {
+  /** 构建 hLayout items，搜索宽度填充剩余空间（预留右侧提示宽度） */
+  function buildItems(totalWidth, hintW) {
     const levelItems = LEVELS.map((level) => ({
       text: button(LABELS[level], {
         active: filterState.levels.includes(level),
@@ -92,15 +78,19 @@ export function createFilterRow(filterState, onUpdate) {
     }));
 
     const used = levelItems.reduce((s, it) => s + it.width, 0);
-    const searchWidth = Math.max(SEARCH_MIN, totalWidth - used);
+    // 有右侧提示时允许搜索框收窄到最小 6 列，保证提示能放得下
+    const minSearch = hintW ? 6 : SEARCH_MIN;
+    const searchWidth = Math.max(minSearch, totalWidth - used - (hintW || 0));
     const searchText = renderSearch(filterState.queryActive, filterState.query, editing, searchWidth);
     levelItems.push({ text: searchText, width: searchWidth });
     return levelItems;
   }
 
   /** 渲染筛选行：编辑时不反白；搜索框有内容时焦点高亮，等级按钮始终焦点高亮 */
-  function render(totalWidth, focused) {
-    const items = buildItems(totalWidth);
+  function render(totalWidth, focused, rightHint) {
+    const hint = rightHint || '';
+    const hintW = hint ? textWidth(hint) + 1 : 0;
+    const items = buildItems(totalWidth, hintW);
     const layout = hLayout(items, totalWidth);
 
     const doHighlight = focused && !editing;
@@ -115,6 +105,15 @@ export function createFilterRow(filterState, onUpdate) {
         layout.line.slice(0, a) +
         '\x1b[7m' + layout.line.slice(a, b) + '\x1b[27m' +
         layout.line.slice(b);
+    }
+
+    // 右对齐附加提示（如任务结束后的 exit 提示）——按视觉宽度处理，避免 ANSI 序列被切片
+    if (hint) {
+      const base = layout.line.replace(/[ \t]+$/, '');
+      const bw = textWidth(base);
+      if (bw + hintW <= totalWidth) {
+        layout.line = base + ' '.repeat(totalWidth - bw - hintW) + ' ' + hint;
+      }
     }
 
     return layout;
@@ -214,8 +213,8 @@ export function createFilterRow(filterState, onUpdate) {
   let _lastSlots = [];
   let _lastSearchClick = 0;
 
-  function renderAndTrack(totalWidth, focused) {
-    const layout = render(totalWidth, focused);
+  function renderAndTrack(totalWidth, focused, rightHint) {
+    const layout = render(totalWidth, focused, rightHint);
     _lastSlots = layout.slots;
     return layout;
   }
