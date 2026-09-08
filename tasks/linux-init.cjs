@@ -39,9 +39,9 @@ function initLinuxCross() {
 
     if (!fs.existsSync(destPath)) {
       fs.copyFileSync(srcPath, destPath);
-      console.log('Created src-tauri/' + dest);
+      console.log(`Created ${tauriDir}/${dest}`);
     } else {
-      console.log('src-tauri/' + dest + ' already exists, skipping');
+      console.log(`${tauriDir}/${dest} already exists, skipping`);
     }
   }
 

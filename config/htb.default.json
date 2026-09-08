@@ -1,4 +1,11 @@
 {
+  "project": {
+    "tauriDir": "src-tauri",
+    "frontendDir": "src",
+    "keysDir": "keys",
+    "iconsDir": "icons",
+    "productName": ""
+  },
   "build": {
     "retry": 3,
     "concurrency": 4,

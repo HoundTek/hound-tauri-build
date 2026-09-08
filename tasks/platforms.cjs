@@ -9,19 +9,33 @@
 
 const path = require('path');
 const { collectPlatform } = require('../lib/artifacts.cjs');
+const { getConfig } = require('../lib/config.cjs');
 
 // 图标生成器入口（lib/ 下的 gen-icons.cjs）
 const GEN_CMD = `node "${path.join(__dirname, '..', 'lib', 'gen-icons.cjs')}"`;
 
-// iOS 构建配置（来自统一配置，HTB_* 环境变量由 config.cjs 扁平化产生）：
-//   ios.target: "sim" —— 构建模拟器（tauri ios build --target aarch64-sim）
-//   ios.sign:   false —— 跳过代码签名（tauri ios build --no-sign）
-const IOS_TARGET = process.env.HTB_IOS_TARGET === 'sim' ? ' --target aarch64-sim' : '';
-const IOS_NO_SIGN = process.env.HTB_IOS_SIGN === 'false' ? ' --no-sign' : '';
+const config = getConfig();
+const TAURI_DIR = config.project.tauriDir || 'src-tauri';
+const FRONTEND_DIR = config.project.frontendDir || 'src';
 
-// 交叉编译通用命令：临时前端产物目录 + tauri build（--runner cross）+ 事后清理
-const CROSS_CMD = (target, extra = '') =>
-  `rm -rf src-tauri/.htb-frontend-dist && cp -r src src-tauri/.htb-frontend-dist && tauri build --runner cross --target ${target}${extra ? ' ' + extra : ''} --config '{"build":{"frontendDist":"./.htb-frontend-dist"}}'; code=$?; rm -rf src-tauri/.htb-frontend-dist; exit $code`;
+// iOS 构建 flag（来自统一配置，HTB_* 环境变量由 config.cjs 扁平化产生）
+const IOS_SIM_TARGET = 'aarch64-sim';
+const IOS_TARGET_FLAG = process.env.HTB_IOS_TARGET === 'sim' ? ` --target ${IOS_SIM_TARGET}` : '';
+const IOS_NO_SIGN_FLAG = process.env.HTB_IOS_SIGN === 'false' ? ' --no-sign' : '';
+const IOS_BUILD_CMD = `tauri ios build${IOS_TARGET_FLAG}${IOS_NO_SIGN_FLAG}`;
+
+/**
+ * 交叉编译通用命令：复制前端产物到临时目录 → tauri build --runner cross → 清理。
+ * 用 `code=$?` 捕获 tauri build 退出码，清理后再传递（保证临时目录总被清理）。
+ */
+const CROSS_CMD = (target, extra = '') => [
+  `rm -rf ${TAURI_DIR}/.htb-frontend-dist`,
+  `cp -r ${FRONTEND_DIR} ${TAURI_DIR}/.htb-frontend-dist`,
+  `tauri build --runner cross --target ${target}${extra ? ' ' + extra : ''} --config '{"build":{"frontendDist":"./.htb-frontend-dist"}}'`,
+  'code=$?',
+  `rm -rf ${TAURI_DIR}/.htb-frontend-dist`,
+  'exit $code',
+].join(' && ');
 
 const CROSS_BUILD = { resource: 'resource:cross-build', mode: 'write' };
 const TAU_CLI = { resource: 'resource:tauri-cli', mode: 'write' };
@@ -44,13 +58,25 @@ const ICON_TASKS = ICON_PLATFORMS.map((p) => ({
 }));
 
 // ---- build:* 构建任务 ----
+
+// 交叉编译目标三元组
+const TARGET_WIN = 'x86_64-pc-windows-gnu';
+const TARGET_LINUX = 'x86_64-unknown-linux-gnu';
+const TARGET_MAC = 'x86_64-apple-darwin';
+const TARGET_MAC_UNIVERSAL = 'universal-apple-darwin';
+
+// 共享构建命令（build 和 build-quick 复用）
+const CMD_WIN = CROSS_CMD(TARGET_WIN, '--bundles nsis');
+const CMD_LINUX = CROSS_CMD(TARGET_LINUX);
+const CMD_ANDROID = 'tauri android build';
+
 const BUILD_CMD = {
-  win: CROSS_CMD('x86_64-pc-windows-gnu', '--bundles nsis'),
-  mac: 'tauri build --target x86_64-apple-darwin --bundles app',
-  'mac-universal': 'tauri build --target universal-apple-darwin --bundles app',
-  linux: CROSS_CMD('x86_64-unknown-linux-gnu'),
-  android: 'tauri android build',
-  ios: `tauri ios build${IOS_TARGET}${IOS_NO_SIGN}`,
+  win: CMD_WIN,
+  mac: `tauri build --target ${TARGET_MAC} --bundles app`,
+  'mac-universal': `tauri build --target ${TARGET_MAC_UNIVERSAL} --bundles app`,
+  linux: CMD_LINUX,
+  android: CMD_ANDROID,
+  ios: IOS_BUILD_CMD,
 };
 // 构建前置：平台专属初始化（在 icon 之后执行）
 const BUILD_EXTRA_INIT = {
@@ -73,11 +99,11 @@ const BUILD_TASKS = BUILD_PLATFORMS.map((p) => ({
 const QUICK_CMD = {
   desktop: 'tauri build',
   mac: 'tauri build --bundles app',
-  'mac-universal': 'tauri build --target universal-apple-darwin --bundles app',
-  win: CROSS_CMD('x86_64-pc-windows-gnu', '--bundles nsis'),
-  linux: CROSS_CMD('x86_64-unknown-linux-gnu', '--bundles deb appimage rpm'),
-  android: 'tauri android build',
-  ios: `tauri ios build${IOS_TARGET}${IOS_NO_SIGN}`,
+  'mac-universal': `tauri build --target ${TARGET_MAC_UNIVERSAL} --bundles app`,
+  win: CMD_WIN,
+  linux: CROSS_CMD(TARGET_LINUX, '--bundles deb appimage rpm'),
+  android: CMD_ANDROID,
+  ios: IOS_BUILD_CMD,
 };
 const QUICK_INIT = { linux: ['linux:init'] };
 const QUICK_PLATFORMS = ['desktop', 'mac', 'mac-universal', 'win', 'linux', 'android', 'ios'];
