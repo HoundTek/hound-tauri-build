@@ -1,4 +1,9 @@
-// 颜色系统：任务ID → 颜色映射，供树节点和日志圆点共用
+/**
+ * @file 颜色系统
+ * @description 任务 ID 到 ANSI 颜色的映射，供树节点和日志圆点共用.
+ * @module colors
+ * @author hound-builder
+ */
 
 const COLORS = [
   '\x1b[36m', // cyan
@@ -35,7 +40,11 @@ export function colorText(id, text) {
   return taskColor(id) + text + RESET;
 }
 
-/** 返回带颜色的归属标记 ►（按任务ID着色，用于区分日志来源） */
+/**
+ * 返回带颜色的归属标记 ►，用于区分日志来源
+ * @param {string|number} id - 任务 ID
+ * @returns {string} 带 ANSI 颜色的箭头符号
+ */
 export function taskDot(id) {
   return taskColor(id) + '\u25BA' + RESET;
 }

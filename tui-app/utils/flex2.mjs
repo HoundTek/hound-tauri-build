@@ -1,6 +1,19 @@
 /**
+ * @file 双面板高度弹性分配
+ * @description 按对数比例在两个面板之间分配可用高度，保证总量不溢出且满足最小值约束。
+ * @module flex2
+ * @author hound-builder
+ */
+
+/**
  * 按对数比例分配 totHeight，保证 height1+height2 ≤ totHeight
  * 每侧至少保留 min1/min2 高度（若 totHeight 允许）
+ * @param {number} totHeight - 可用总高度
+ * @param {number} maxHeight1 - 第一面板最大高度
+ * @param {number} maxHeight2 - 第二面板最大高度
+ * @param {number} [min1=1] - 第一面板最小高度
+ * @param {number} [min2=3] - 第二面板最小高度
+ * @returns {[number, number]} 分配后的 [height1, height2]
  */
 export function flexTwo(totHeight, maxHeight1, maxHeight2, min1 = 1, min2 = 3) {
     const avail = Math.max(0, totHeight);

@@ -1,16 +1,20 @@
+/**
+ * @file 文本换行工具
+ * @description 对含 ANSI 转义序列和全角字符的文本进行按宽度换行，支持超链接状态追踪。
+ * @module wrap-line
+ * @author hound-builder
+ */
+
 import { charWidth } from './char-width.mjs';
 import { skipAnsi } from './ansi.mjs';
 
-export function wrapLine(text, width) {
 /**
-文本换行函数
-@param {string} text - 待换行的文本
-@param {number} width - 换行宽度
-@returns {[string]} - 换行后的文本
-字符串包含转义字符，全角字符，中文字符，
-ANSI/CSI/OSC/BEL/ST/DCS/PM/APC控制符等，
-需要特殊处理
-*/
+ * 文本换行函数，支持 ANSI/CSI/OSC/BEL/ST/DCS/PM/APC 控制符、全角字符和中文字符
+ * @param {string} text - 待换行的文本
+ * @param {number} width - 换行宽度
+ * @returns {string[]} 换行后的文本数组
+ */
+export function wrapLine(text, width) {
 
   const lines = [];
   let cur = '';

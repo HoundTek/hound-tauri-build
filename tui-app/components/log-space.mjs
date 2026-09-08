@@ -1,4 +1,9 @@
-// 日志空间组件（圆角矩形边框的区域）
+/**
+ * @file 日志空间组件
+ * @description 渲染带圆角矩形边框的日志显示区域，支持溢出检测和居中提示。
+ * @module log-space
+ * @author hound-builder
+ */
 
 import { textWidth } from '../utils/text-width.mjs';
 import { padLine } from '../utils/ansi.mjs';
@@ -8,9 +13,20 @@ const TL = '\u256D'; const TR = '\u256E';
 const BL = '\u2570'; const BR = '\u256F';
 const HZ = '\u2500'; const VT = '\u2502';
 
-/** 给边框行加灰色 */
+/**
+ * 给边框字符串添加灰色主题色
+ * @param {string} s - 原始边框字符串
+ * @returns {string} 带灰色样式的边框字符串
+ */
 function border(s) { return theme.info + s + theme.fgDefault; }
 
+/**
+ * 渲染带圆角矩形边框的日志空间
+ * @param {number} width - 区域总宽度
+ * @param {number} height - 区域总高度
+ * @param {string[]} content - 要显示的文本行数组
+ * @returns {string[]} 渲染后的行数组
+ */
 export function logSpace(width, height, content) {
   if (width < 2 || height < 2) {
     // 空间不足，返回空行

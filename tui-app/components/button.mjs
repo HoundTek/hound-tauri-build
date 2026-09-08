@@ -1,12 +1,18 @@
-// 按钮组件：[ Label ] 格式，支持 active/inactive 样式
+/**
+ * @file 按钮渲染组件
+ * @description 提供 [Label] 格式的按钮渲染，支持 active/inactive 样式与自定义颜色。
+ * @module components/button
+ * @author hound-builder
+ */
 
 import { textWidth } from '../utils/text-width.mjs';
 import { theme } from '../utils/theme.mjs';
 
 /**
- * @param {string} label
- * @param {{ active?: boolean, width?: number, color?: string }} [opts]
- * @returns {string}
+ * 渲染带方括号的按钮文本
+ * @param {string} label 按钮标签文字
+ * @param {{ active?: boolean, width?: number, color?: string }} [opts] 可选配置项
+ * @returns {string} 带 ANSI 样式的按钮文本
  */
 export function button(label, opts = {}) {
   const active = opts.active !== false;

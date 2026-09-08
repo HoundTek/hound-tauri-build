@@ -1,4 +1,9 @@
-// 绘制树形结构，返回行数组
+/**
+ * @file 树形结构渲染组件
+ * @description 绘制带折叠/展开、链压缩和可点击标记的树形结构，返回渲染行数组。
+ * @module components/tree
+ * @author hound-builder
+ */
 
 import { textWidth } from '../utils/text-width.mjs';
 
@@ -8,17 +13,29 @@ const R = '\x1b[39m';
 const ARROW_EXPAND  = G + '\u25BC ' + R;  // ▼ 展开
 const ARROW_COLLAPSE = G + '\u25B6 ' + R;  // ▶ 折叠
 
-/** 默认节点内容渲染 */
+/**
+ * 默认节点内容渲染，将节点描述包裹在方括号中
+ * @param {{ description: string }} node 树节点
+ * @returns {string} 渲染后的文本
+ */
 function defaultRender(node) {
   return '[' + node.description + ']';
 }
 
-/** 切换节点折叠状态 */
+/**
+ * 切换节点的折叠/展开状态
+ * @param {{ collapsed: boolean }} node 树节点
+ * @returns {void}
+ */
 export function toggleNode(node) {
   node.collapsed = !node.collapsed;
 }
 
-/** 收集线性链节点（唯一子节点的单向链） */
+/**
+ * 收集从给定节点开始的线性链（唯一子节点的单向链）
+ * @param {{ children: object[], collapsed: boolean }} node 链起始节点
+ * @returns {object[]} 链中的节点数组
+ */
 export function collectChain(node) {
   const chain = [node];
   let cur = node;
@@ -130,9 +147,10 @@ export function walkTree(node, opts = {}) {
 // ── 公开 API ──
 
 /**
- * @param {{ description: string, children: Array }} node
- * @param {{ renderNode?: (node) => string }} [opts]
- * @returns {string[]}
+ * 将树形节点渲染为文本行数组
+ * @param {{ description: string, children: Array }} node 根节点
+ * @param {{ renderNode?: (node) => string }} [opts] 可选的自定义渲染函数
+ * @returns {string[]} 渲染后的文本行数组
  */
 export function drawTree(node, opts = {}) {
   return walkTree(node, opts).lines;

@@ -1,5 +1,9 @@
-// 焦点系统：状态管理 + 键盘/点击事件 + 渲染辅助
-// 与 makePage 渲染逻辑完全解耦
+/**
+ * @file 焦点系统：状态管理 + 键盘/点击事件 + 渲染辅助
+ * @description 管理 TUI 焦点切换、键盘导航、鼠标交互与选区，与 makePage 渲染逻辑完全解耦。
+ * @module focus
+ * @author hound-builder
+ */
 
 import { on } from './events.mjs';
 import { treeClick, collectChain } from '../components/tree.mjs';
@@ -9,6 +13,7 @@ import { charWidth } from './char-width.mjs';
 
 // ── 只读状态 ───────────────────────────────────────
 
+/** 焦点系统全局状态（只读，由事件处理器内部修改） */
 export const focusState = {
   focus: 'tree',      // 'tree' | 'log' | 'footer'
   treeCursor: 0,      // 树区域光标（绝对内容行索引）
@@ -44,17 +49,26 @@ export const logSearch = {
 };
 
 // 连续溢出检测（模块级，供测试重置）
+/** @type {number} 连续到达日志边界的计数（用于 follow 模式自动切换） */
 export let _consecBoundary = 0;
+/** 重置连续边界计数器为 0（测试用） */
 export function resetConsecBoundary() { _consecBoundary = 0; }
 
 // ── 渲染辅助 ───────────────────────────────────────
 
 // highlightRange / highlightSlot / highlightLine / underlineRange / applyLogSelection / applyLogSearch
 // 已提取到 highlight.mjs，此处 re-export 保持向后兼容
+/**
+ * 从 highlight.mjs re-export 的渲染辅助函数（保持向后兼容）
+ * @see module:highlight
+ */
 export { highlightLine, highlightSlot, applyLogSelection, applyLogSearch } from './highlight.mjs';
 
 /**
  * 计算树行内所有可交互元素（箭头、复选框），按列排序。
+ * @param {number} lineIdx - 行索引
+ * @param {object[]} markers - 各行箭头标记数组
+ * @param {string[]} lines - 树区所有行文本
  * @returns {{ col: number, width: number, type: 'toggle'|'checkbox', node?: object, cbIdx?: number }[]}
  */
 export function getTreeSlots(lineIdx, markers, lines) {
@@ -77,7 +91,12 @@ export function getTreeSlots(lineIdx, markers, lines) {
   return slots;
 }
 
-/** 每帧渲染后调用，确保光标不越界（基于内容绝对索引） */
+/**
+ * 每帧渲染后调用，确保光标不越界（基于内容绝对索引）。
+ * @param {object} [treeCtx] - 树区上下文，包含 lines 等
+ * @param {object} [logCtx] - 日志区上下文，包含 lineToEntry 等
+ * @returns {void}
+ */
 export function clampCursors(treeCtx, logCtx) {
   const s = focusState;
   if (treeCtx && treeCtx.lines.length > 0) {
@@ -89,7 +108,11 @@ export function clampCursors(treeCtx, logCtx) {
   }
 }
 
-/** 日志光标的实际列（状态栏/光标块使用）：逻辑列超过行末时退到行末 */
+/**
+ * 日志光标的实际列（状态栏/光标块使用）：逻辑列超过行末时退到行末。
+ * @param {object} logCtx - 日志区上下文，包含 logLines 等
+ * @returns {number} 实际列位置
+ */
 export function cursorActualCol(logCtx) {
   const lines = logCtx && logCtx.logLines;
   if (!lines || lines.length === 0 || focusState.logCursor < 0 || focusState.logCursor >= lines.length) {
@@ -103,26 +126,42 @@ export function cursorActualCol(logCtx) {
 /**
  * 行内容宽度：去除 ANSI 与尾部补齐空白。
  * wrapLine 会把每行补齐到满宽，vim 的 $ 应落在内容末尾而非补齐空白处。
+ * @param {string} line - 原始行文本（含 ANSI 转义）
+ * @returns {number} 可见内容宽度
  */
 export function lineWidth(line) {
   return textWidth((line || '').replace(/[ \t]+$/, ''));
 }
 
-/** 重置 vim 状态到 normal 模式 */
+/**
+ * 重置 vim 状态到 normal 模式。
+ * @returns {void}
+ */
 function resetVimToNormal() {
   vimMode.mode = 'normal';
   vimMode.count = 0;
   logSel.active = false;
 }
 
-/** 计算可见区域的行范围（供鼠标点击定位） */
+/**
+ * 计算可见区域的行范围（供鼠标点击定位）。
+ * @param {object} scrollState - 滚动状态，包含 maxIndex
+ * @param {number} height - 可用高度（行数）
+ * @param {number} totalLines - 内容总行数
+ * @returns {{ bodyH: number, minIdx: number }} 可见区域高度和最小可见行索引
+ */
 function getVisibleRange(scrollState, height, totalLines) {
   const bodyH = totalLines > height ? height - 1 : totalLines;
   const minIdx = Math.max(0, scrollState.maxIndex - bodyH + 1);
   return { bodyH, minIdx };
 }
 
-/** 下一个词首（从 col 之后开始，空格分隔的简化 vim 词） */
+/**
+ * 下一个词首（从 col 之后开始，空格分隔的简化 vim 词）。
+ * @param {string} text - 纯文本行内容
+ * @param {number} col - 当前列位置
+ * @returns {number} 下一个词首的列位置
+ */
 function nextWordStart(text, col) {
   const n = text.length;
   let i = Math.min(col, n);
@@ -132,7 +171,12 @@ function nextWordStart(text, col) {
   return i;
 }
 
-/** 上一个词首（光标在词中时先回到当前词首） */
+/**
+ * 上一个词首（光标在词中时先回到当前词首）。
+ * @param {string} text - 纯文本行内容
+ * @param {number} col - 当前列位置
+ * @returns {number} 上一个词首的列位置
+ */
 function prevWordStart(text, col) {
   const n = text.length;
   let i = Math.min(col, n);
@@ -145,7 +189,12 @@ function prevWordStart(text, col) {
   return i;
 }
 
-/** 当前/下一个词尾 */
+/**
+ * 当前/下一个词尾。
+ * @param {string} text - 纯文本行内容
+ * @param {number} col - 当前列位置
+ * @returns {number} 词尾的列位置
+ */
 function wordEnd(text, col) {
   const n = text.length;
   let i = Math.min(col, n);
@@ -154,7 +203,14 @@ function wordEnd(text, col) {
   return Math.max(col, Math.min(i, n) - 1);
 }
 
-/** 确保光标在可见区域内，否则最小位移滚屏 */
+/**
+ * 确保光标在可见区域内，否则最小位移滚屏。
+ * @param {object} scrollState - 滚动状态，包含 maxIndex
+ * @param {number} height - 可用高度（行数）
+ * @param {number} totalLines - 内容总行数
+ * @param {number} cursor - 当前光标行索引
+ * @returns {void}
+ */
 function ensureCursorVisible(scrollState, height, totalLines, cursor) {
   const bodyH = totalLines > height ? height - 1 : totalLines;
   const minIdx = Math.max(0, scrollState.maxIndex - bodyH + 1);
@@ -168,6 +224,11 @@ function ensureCursorVisible(scrollState, height, totalLines, cursor) {
   }
 }
 
+/**
+ * 在行文本中查找所有复选框符号（☐/☑），跳过 ANSI 转义。
+ * @param {string} line - 原始行文本（含 ANSI 转义）
+ * @returns {{ col: number, idx: number }[]} 复选框位置列表，col 为可见列，idx 为同行列内索引
+ */
 function findCheckboxes(line) {
   const results = [];
   let i = 0;
@@ -200,6 +261,7 @@ function findCheckboxes(line) {
  * @param {(sel: object) => void} [opts.onCopy] — 右键复制回调，传入当前 logSel
  * @param {() => boolean} [opts.isExitPanelVisible] — 退出面板是否可见
  * @param {() => boolean} [opts.isHelpVisible] — 帮助页是否可见
+ * @returns {void}
  */
 export function initFocus(opts) {
   const {

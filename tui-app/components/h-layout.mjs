@@ -1,8 +1,14 @@
-// 单行布局：将多个组件水平排列到一行，返回渲染行及每个 slot 的 x 位置
+/**
+ * @file 水平布局组件
+ * @description 将多个组件水平排列到一行，返回渲染行及每个 slot 的 x 位置。
+ * @module h-layout
+ * @author hound-builder
+ */
 
 import { ansiWidth as textWidth, ansiTruncate } from '../utils/ansi.mjs';
 
 /**
+ * 将多个子项水平排列到指定宽度的一行中
  * @param {Array<{ text: string, width: number }>} items
  * @param {number} totalWidth
  * @returns {{ line: string, slots: Array<{ x: number, width: number }> }}

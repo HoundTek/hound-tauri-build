@@ -1,9 +1,15 @@
-// TaskNode：单节点渲染 = 图标指示器 + 任务名称 + 三态复选框 + 进度/时长
+/**
+ * @file 任务节点单行渲染组件
+ * @description 提供图标指示器、任务名称、复选框与进度/时长的单节点渲染。
+ * @module components/task-node
+ * @author hound-builder
+ */
 
 import { taskColor } from '../utils/colors.mjs';
 import { tick } from '../utils/tick.mjs';
 import { theme } from '../utils/theme.mjs';
 
+/** 各任务状态对应的显示图标 */
 const ICONS = {
   pending: '\u25CB',
   running: '\u25CF',
@@ -33,7 +39,7 @@ export function fmtTime(ms) {
   return `${h}h${min}m${sec}s`;
 }
 
-// 二态复选框：0=隐藏 1=显示
+/** 二态复选框字符映射：0=隐藏 1=显示 */
 const CHECKBOX = {
   0: '\u2610', // ☐
   1: '\u2611', // ☑

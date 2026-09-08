@@ -1,5 +1,15 @@
-// 字符显示宽度（共用，供 textWidth / wrapLine 使用）
+/**
+ * @file 字符显示宽度计算
+ * @description 提供字符显示宽度计算函数，供 textWidth 和 wrapLine 使用。
+ * @module char-width
+ * @author hound-builder
+ */
 
+/**
+ * 计算单个字符的显示宽度
+ * @param {string} c - 需要计算宽度的字符
+ * @returns {number} 字符显示宽度，半角字符返回 1，全角字符返回 2，控制字符返回 0
+ */
 export function charWidth(c) {
   const code = c.codePointAt(0);
   // 控制字符 (0x00-0x1F, 0x7F) 不占显示宽度

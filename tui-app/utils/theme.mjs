@@ -1,7 +1,22 @@
-// 终端主题适配样式
-// 弹窗/警告等覆盖层不再写死 256 色背景，改用反白/加粗/标准 ANSI 色：
-// 反白会随终端主题自动反色，标准 ANSI 色在明暗主题下均可读。
+/**
+ * @file 终端主题适配样式
+ * @description 弹窗/警告等覆盖层不再写死 256 色背景，改用反白/加粗/标准 ANSI 色，以适配终端主题.
+ * @module theme
+ * @author hound-builder
+ */
 
+/**
+ * 终端主题样式常量集合，包含反白、强调、标准 ANSI 前景色及呼吸动画序列
+ * @type {{
+ *   rev: string, revOff: string,
+ *   bold: string, dim: string, underline: string, underOff: string, reset: string,
+ *   fgDefault: string,
+ *   warn: string, warnBold: string,
+ *   danger: string, dangerBold: string,
+ *   ok: string, info: string, faint: string,
+ *   PULSE: string[]
+ * }}
+ */
 export const theme = {
   // 反白（高亮/选中/弹窗强调行）
   rev:      '\x1b[7m',

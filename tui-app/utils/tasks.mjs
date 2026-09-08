@@ -1,3 +1,10 @@
+/**
+ * @file 任务树构建与查询工具
+ * @description 从任务注册表加载依赖关系，构建可展示的任务树结构。
+ * @module tasks
+ * @author hound-builder
+ */
+
 import { createRequire } from 'module';
 import { join } from 'path';
 
@@ -6,6 +13,12 @@ const { loadTaskRegistry } = require(join(import.meta.dirname, '..', '..', 'lib'
 
 /** 任务树节点 */
 class TaskNode {
+  /**
+   * 创建任务树节点
+   * @param {string} id - 任务标识
+   * @param {string} description - 任务描述
+   * @param {TaskNode[]} children - 子任务节点列表
+   */
   constructor(id, description, children = []) {
     this.id = id;
     this.description = description;
@@ -13,7 +26,12 @@ class TaskNode {
   }
 }
 
-/** BFS 收集目标及其全部传递依赖 */
+/**
+ * BFS 收集目标及其全部传递依赖
+ * @param {string[]} targetIds - 目标任务 ID 列表
+ * @param {Map<string, object>} registry - 任务注册表
+ * @returns {object[]} 包含的所有任务列表
+ */
 function collectDeps(targetIds, registry) {
   const needed = new Set();
   const queue = [...targetIds];
@@ -26,7 +44,12 @@ function collectDeps(targetIds, registry) {
   return [...needed].map((id) => registry.get(id));
 }
 
-/** 构建任务树 */
+/**
+ * 构建任务树
+ * @param {object[]} taskList - 任务列表
+ * @param {Map<string, object>} registry - 任务注册表
+ * @returns {TaskNode[]} 根节点列表
+ */
 function buildTree(taskList, registry) {
   const hasDependent = new Set();
   for (const t of taskList) {
@@ -43,7 +66,7 @@ function buildTree(taskList, registry) {
   return roots.map((r) => buildNode(r.id)).filter(Boolean);
 }
 
-/*
+/**
  * 返回任务树
  * @param {string[]} [targetIds] - 目标任务 ID 列表，默认全部
  * @returns {{ nodes: TaskNode[], errors: string[] }}

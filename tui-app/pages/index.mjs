@@ -1,3 +1,10 @@
+/**
+ * @file 页面主渲染与交互协调
+ * @description 组装树面板、日志面板、筛选栏和 overlay 弹窗，协调滚动、焦点和键盘事件。
+ * @module {demos}/pages/index
+ * @author hound-builder
+ */
+
 import { useScroll } from '../components/scroll.mjs';
 import configModule from '../../lib/config.cjs';
 import { logSpace } from '../components/log-space.mjs';
@@ -26,7 +33,16 @@ export { initFromTasks, onTaskStatus, onLogEntry, onBuildExit, running, exitPane
 // ── 对外接口 ────────────────────────────────────────
 
 let _onUpdate = null;
+/**
+ * 设置滚动状态变化回调，用于通知外部请求重绘
+ * @param {Function} fn - 回调函数
+ * @returns {void}
+ */
 export function setScrollCallback(fn) { _onUpdate = fn; }
+/**
+ * 判断筛选行是否处于编辑模式
+ * @returns {boolean}
+ */
 export function isFooterEditing() { return filterRow.isEditing(); }
 
 // ── 滚动 ────────────────────────────────────────────
@@ -73,6 +89,13 @@ const filterRow = createFilterRow(filterState, () => _onUpdate?.());
 
 // ── 右键复制：从选中区域提取纯文本 ───────────────────
 
+/**
+ * 从视觉选择区域提取纯文本，按 entry 分组拼接折行片段并应用列裁剪
+ * @param {{ startLine: number, endLine: number, startCol: number, endCol: number }} sel - 视觉选择范围
+ * @param {string[]} logLines - 换行后的日志显示行数组
+ * @param {number[]} lineToEntry - 每行对应的原始日志条目索引
+ * @returns {string} 提取的纯文本
+ */
 function extractSelectedText(sel, logLines, lineToEntry) {
   const a = Math.min(sel.startLine, sel.endLine);
   const b = Math.max(sel.startLine, sel.endLine);
@@ -124,6 +147,11 @@ function extractSelectedText(sel, logLines, lineToEntry) {
   return results.join('\n');
 }
 
+/**
+ * 将当前视觉选择区域的文本通过 OSC 52 写入终端剪贴板
+ * @param {{ startLine: number, endLine: number, startCol: number, endCol: number }} sel - 视觉选择范围
+ * @returns {void}
+ */
 function copyToClipboard(sel) {
   const lines = _logCtx.logLines;
   if (!lines || lines.length === 0) return;
@@ -138,6 +166,10 @@ function copyToClipboard(sel) {
 
 let copyFlashAt = 0; // 复制按钮反白反馈时间戳
 
+/**
+ * 复制当前筛选视图下的全部日志到终端剪贴板（OSC 52）
+ * @returns {void}
+ */
 function copyAllLogs() {
   const filtered = getFilteredLogs();
   const text = filtered.map((e) => stripAnsi(e.text)).join('\n');
@@ -231,6 +263,10 @@ on('key', (k) => {
 
 // ── 主渲染 ──────────────────────────────────────────
 
+/**
+ * 渲染一帧完整页面，返回每行字符串数组
+ * @returns {string[]} 每行一个元素的输出数组，长度等于终端行数
+ */
 export function makePage() {
   const { rows, columns } = getTerminalSize();
   const W = Math.max(1, columns);

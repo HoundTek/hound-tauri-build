@@ -35,6 +35,7 @@ const HELP = [
  * @param {{ visible: boolean, selected: string }} panel - 面板状态
  * @param {number} W - 终端宽度
  * @param {number} H - 终端高度
+ * @returns {void}
  */
 export function renderExitPanel(output, panel, W, H) {
   if (!panel.visible) return;
@@ -71,6 +72,7 @@ export function renderExitPanel(output, panel, W, H) {
  * @param {{ visible: boolean }} panel - 面板状态
  * @param {number} W - 终端宽度
  * @param {number} H - 终端高度
+ * @returns {void}
  */
 export function renderHelpPanel(output, panel, W, H) {
   if (!panel.visible) return;

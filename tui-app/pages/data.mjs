@@ -111,7 +111,11 @@ export const helpPanel = { visible: false };
 
 // ── 状态 mutation ───────────────────────────────────
 
-/** 从后端任务定义初始化树 */
+/**
+ * 从后端任务定义初始化树
+ * @param {Array<{ id: string, description: string, dependsOn: string[] }>} taskDefs - 后端任务定义列表
+ * @returns {void}
+ */
 export function initFromTasks(taskDefs) {
   tree = buildTreeFromDefs(taskDefs);
   logEntries.length = 0;
@@ -120,7 +124,13 @@ export function initFromTasks(taskDefs) {
   running.val = true;
 }
 
-/** 更新任务状态 */
+/**
+ * 更新任务状态
+ * @param {string} taskId - 任务 ID
+ * @param {string} status - 新状态（pending / running / done / failed / skipped）
+ * @param {number} [elapsed] - 已用毫秒数
+ * @returns {void}
+ */
 export function onTaskStatus(taskId, status, elapsed) {
   if (status === 'running' && !startTimes.has(taskId)) {
     startTimes.set(taskId, Date.now() - (elapsed || 0));
@@ -131,7 +141,12 @@ export function onTaskStatus(taskId, status, elapsed) {
   updateNodeStatus(tree, taskId, status, elapsed);
 }
 
-/** 添加日志条目 */
+/**
+ * 添加日志条目
+ * @param {string} text - 日志文本
+ * @param {string} [taskId] - 关联的任务 ID
+ * @returns {void}
+ */
 export function onLogEntry(text, taskId) {
   logEntries.push({ text, level: detectLevel(text), taskId: taskId || '' });
   if (logEntries.length > tuiConfig.logLimit) {
@@ -139,14 +154,21 @@ export function onLogEntry(text, taskId) {
   }
 }
 
-/** 构建结束 */
+/**
+ * 构建结束
+ * @param {boolean} ok - 构建是否成功
+ * @returns {void}
+ */
 export function onBuildExit(ok) {
   running.val = false;
   buildOk = !!ok;
   finalElapsed = Date.now() - buildStartTime;
 }
 
-/** 切换运行/暂停状态 */
+/**
+ * 切换运行/暂停状态
+ * @returns {void}
+ */
 export function toggleFinished() { running.val = !running.val; }
 
 // ── 渲染辅助（供 makePage 调用）────────────────────

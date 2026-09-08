@@ -1,7 +1,9 @@
-// 终端尺寸检测
-// Windows 上 process.stdout.rows/columns 经常为 undefined（尤其经 yarn/cmd 启动时），
-// 需要多级回退：getWindowSize() → ANSI 查询序列 \x1b[18t → 默认值。
-// 查询结果异步缓存，渲染读取缓存值。
+/**
+ * @file 终端尺寸检测
+ * @description 多级回退策略获取终端行列数，支持缓存和异步 ANSI 查询。
+ * @module terminal-size
+ * @author hound-builder
+ */
 
 let cached = null;   // { rows, columns } 缓存的有效尺寸
 let querying = false; // 避免并发查询
@@ -12,7 +14,12 @@ function fallback() {
   return { rows, columns };
 }
 
-/** 显式写入已知尺寸（resize 事件时调用） */
+/**
+ * 显式写入已知尺寸（resize 事件时调用）
+ * @param {number} rows - 行数
+ * @param {number} columns - 列数
+ * @returns {void}
+ */
 export function updateTerminalSize(rows, columns) {
   if (Number.isInteger(rows) && rows > 0 && Number.isInteger(columns) && columns > 0) {
     cached = { rows, columns };

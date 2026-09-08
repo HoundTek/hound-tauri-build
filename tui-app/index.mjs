@@ -1,3 +1,10 @@
+/**
+ * @file TUI 应用入口
+ * @description 连接后端 TCP 服务，接收构建事件并驱动终端渲染循环。
+ * @module tui-app/index
+ * @author hound-builder
+ */
+
 // TUI 应用入口 — 连接后端 TCP，驱动前端渲染
 
 import net from 'net';
@@ -30,6 +37,10 @@ if (!port || isNaN(port)) {
 let back = 0;
 const bufs = ['', ''];
 
+/**
+ * 构建并输出一帧画面到 stdout（双缓冲）
+ * @returns {void}
+ */
 function buildFrame() {
   advanceTick();
   try {
@@ -42,12 +53,20 @@ function buildFrame() {
   }
 }
 
+/**
+ * 同步重绘一帧
+ * @returns {void}
+ */
 function redraw() {
   buildFrame();
 }
 
 // 防抖
 let _pending = false;
+/**
+ * 请求防抖重绘，在下一个微任务中合并多次请求为一次重绘
+ * @returns {void}
+ */
 function requestRedraw() {
   if (!_pending) {
     _pending = true;
@@ -145,6 +164,10 @@ function bindExitPanel() {
   });
 }
 
+/**
+ * 清理资源并退出进程（定时器、事件监听、终端状态）
+ * @returns {void}
+ */
 function cleanupAndExit() {
   clearInterval(updateTimer);
   destroyEvents();
@@ -152,7 +175,10 @@ function cleanupAndExit() {
   process.exit(0);
 }
 
-/** 完整恢复终端状态（正常退出与崩溃兜底共用） */
+/**
+ * 完整恢复终端状态（正常退出与崩溃兜底共用）
+ * @returns {void}
+ */
 function restoreTerminal() {
   try {
     process.stdout.write(ALT_OFF + WRAP_ON + SHOW + '\x1b[?1002l\x1b[?1003l\x1b[?1006l');
@@ -188,6 +214,11 @@ sock.on('error', (err) => {
 let started = false;
 let updateTimer = null;
 
+/**
+ * 处理从后端 TCP 接收的 JSON 消息，分发到对应的状态更新函数
+ * @param {{ type: string }} msg - 后端消息对象
+ * @returns {void}
+ */
 function handleMessage(msg) {
   switch (msg.type) {
     case 'init':
@@ -225,6 +256,11 @@ function handleMessage(msg) {
 
 // ── 崩溃兜底：任何未捕获异常/拒绝都必须恢复终端，避免残留 raw/mouse/alt-screen ──
 
+/**
+ * 崩溃兜底：清理定时器、事件和终端状态后以非零码退出
+ * @param {Error|any} err - 未捕获的异常或拒绝原因
+ * @returns {void}
+ */
 function crashCleanup(err) {
   clearInterval(updateTimer);
   try { destroyEvents(); } catch (_) {}

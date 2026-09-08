@@ -1,5 +1,9 @@
-// 事件系统：统一捕获 keyboard + mouse 事件并分发
-// 架构：双路径输入（data + readable），手动解析，无 readline 依赖
+/**
+ * @file 终端事件系统
+ * @description 统一捕获键盘与鼠标事件并分发，手动解析输入序列，无 readline 依赖。
+ * @module events
+ * @author hound-builder
+ */
 
 import { updateTerminalSize } from './terminal-size.mjs';
 import configModule from '../../lib/config.cjs';
@@ -12,6 +16,8 @@ let dataHandler = null;
 let resizeRegistered = false;
 
 // ── 诊断计数器 ────────────────────────────────────────
+
+/** 事件系统诊断计数器 */
 export const diag = {
   dataFired: 0, readableFired: 0, key: 0, click: 0, scroll: 0, mouse: 0,
 };
@@ -23,10 +29,22 @@ function emit(type, data) {
   for (const h of handlers[type] || []) h(data);
 }
 
+/**
+ * 注册事件监听器
+ * @param {string} type - 事件类型（key / mouse / click / scroll / resize）
+ * @param {Function} fn - 回调函数
+ * @returns {void}
+ */
 export function on(type, fn) {
   if (handlers[type]) handlers[type].push(fn);
 }
 
+/**
+ * 移除事件监听器
+ * @param {string} type - 事件类型
+ * @param {Function} fn - 要移除的回调函数
+ * @returns {void}
+ */
 export function off(type, fn) {
   if (handlers[type]) {
     handlers[type] = handlers[type].filter((h) => h !== fn);
@@ -237,6 +255,12 @@ function processChunk(chunk) {
 
 // ── 初始化 / 销毁 ─────────────────────────────────────
 
+/**
+ * 初始化事件系统：开启 raw mode、鼠标追踪并绑定输入监听
+ * @param {object} [opts] - 配置选项
+ * @param {import('stream').Readable} [opts.stdin] - 自定义输入流，默认 process.stdin
+ * @returns {void}
+ */
 export function initEvents(opts = {}) {
   stdin = opts.stdin || process.stdin;
 
@@ -267,6 +291,10 @@ export function initEvents(opts = {}) {
   }
 }
 
+/**
+ * 销毁事件系统：关闭鼠标追踪、恢复终端模式并清理监听器
+ * @returns {void}
+ */
 export function destroyEvents() {
   try { process.stdout.write('\x1b[?1002l'); } catch (_) {}
   if (stdin) {

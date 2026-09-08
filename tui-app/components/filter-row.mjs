@@ -1,6 +1,9 @@
-// 筛选行：横向排列三个等级筛选按钮 + 一个自定义文本筛选，内建焦点与键盘/点击交互
-//   - 等级按钮：enter/space 切换
-//   - 自定义筛选：enter 进入编辑模式，再 enter 完成，space 切换启/禁用，ESC 取消编辑
+/**
+ * @file 筛选行组件
+ * @description 横向排列等级筛选按钮与自定义文本筛选，内建焦点管理与键盘/点击交互。
+ * @module components/filter-row
+ * @author hound-builder
+ */
 
 import { button } from './button.mjs';
 import { hLayout } from './h-layout.mjs';
@@ -17,7 +20,12 @@ const NUM_LEVELS = LEVELS.length; // 5
 const SEARCH_IDX = NUM_LEVELS;    // 第 6 项（搜索框）
 const SEARCH_MIN = 14;
 
-/** 在含 ANSI 码的行中，找到视觉列位置 visX 对应的字符偏移 */
+/**
+ * 在含 ANSI 转义码的行中，查找视觉列位置对应的字符偏移
+ * @param {string} line 包含 ANSI 转义码的文本行
+ * @param {number} visX 目标视觉列位置（0-based）
+ * @returns {number} 对应的字符偏移量
+ */
 function visToCharIdx(line, visX) {
   let charIdx = 0;
   let visW = 0;
@@ -32,10 +40,13 @@ function visToCharIdx(line, visX) {
   return charIdx;
 }
 
-/** 自定义筛选的渲染
- *  inactive + empty:  [ Filter_______ ]
- *  active + query:    [ hello world  ]
- *  editing:           [ hello world▐ ]
+/**
+ * 渲染自定义搜索筛选框
+ * @param {boolean} active 筛选是否处于激活状态
+ * @param {string} query 当前筛选文本
+ * @param {boolean} editMode 是否处于编辑模式
+ * @param {number} width 筛选框总宽度
+ * @returns {string} 带 ANSI 样式的筛选框文本
  */
 function renderSearch(active, query, editMode, width) {
   const inner = width - 2; // │ + 空格
@@ -60,8 +71,10 @@ function renderSearch(active, query, editMode, width) {
 }
 
 /**
- * @param {object} filterState - { levels: string[], query: string, queryActive: boolean }
- * @param {() => void} onUpdate
+ * 创建筛选行实例，包含等级按钮与自定义搜索的交互逻辑
+ * @param {{ levels: string[], query: string, queryActive: boolean }} filterState 筛选状态对象
+ * @param {() => void} onUpdate 状态变更后的回调函数
+ * @returns {{ render: Function, handleKey: Function, handleClick: Function, isEditing: () => boolean, exitEditing: () => void }} 筛选行实例
  */
 export function createFilterRow(filterState, onUpdate) {
   let focusedIdx = 0;

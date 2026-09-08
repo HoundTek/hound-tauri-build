@@ -1,26 +1,9 @@
-// 滚动组件
-/*
-参数：
-高度number
-宽度number
-内容[string]
-显示的最大索引number
-逻辑：
-如果内容宽度大于宽度，返回[
-// 宽*高 的完整矩形，中间内容居中："Width overflow"
-]
-如果内容高度等于高度，返回[
-// 宽*高 的完整矩形，原始内容，后面补充空格
-]
-如果内容高度大于高度，返回[
-// 宽*(高-1) 的完整矩形，原始内容的显示范围（显示的最小索引到显示的最大索引），后面补充空格
-// `- ${显示的最小索引 + 1}-${显示的最大索引 + 1} / ${内容高度}` + 后面补充空格
-]（显示的最小索引用（高-1）和显示的最大索引算出）
-如果内容高度小于高度，返回[
-// 宽*高 的完整矩形，原始内容，后面补充空格
-// 下面补充空格
-]
-*/
+/**
+ * @file 滚动容器渲染器
+ * @description 提供终端滚动区域的视口计算、状态栏绘制与键盘/滚轮交互。
+ * @module scroll
+ * @author hound-builder
+ */
 
 import { on, off } from '../utils/events.mjs';
 import { textWidth } from '../utils/text-width.mjs';
@@ -28,6 +11,19 @@ import { padLine } from '../utils/ansi.mjs';
 import { statusBar } from './status-bar.mjs';
 import { theme } from '../utils/theme.mjs';
 
+/**
+ * 根据视口高度与内容量计算滚动渲染行数组
+ * @description 根据视口尺寸、内容行数组与滚动位置，返回固定高度的渲染行数组，包含溢出提示、空行填充和状态栏。
+ * @param {number} height - 视口高度（行数）
+ * @param {number} width - 视口宽度（列数）
+ * @param {string[]} content - 待渲染的内容行数组
+ * @param {number} maxIndex - 当前可见区域的最大行索引（决定滚动位置）
+ * @param {number} cursorLine - 逻辑光标所在行号（用于状态栏显示）
+ * @param {string} [statusExtra] - 状态栏右侧附加文本
+ * @param {string} [statusPrefix] - 状态栏左侧前缀文本（如 vim 模式标识）
+ * @param {number} [cursorCol] - 逻辑光标所在列号（用于状态栏显示）
+ * @returns {string[]} 固定长度为 height（无状态栏）或 height+1（有状态栏）的渲染行数组
+ */
 export function scroll(height, width, content, maxIndex, cursorLine, statusExtra, statusPrefix, cursorCol) {
   if (height <= 0 || width <= 0) return [];
   const total = content.length;
