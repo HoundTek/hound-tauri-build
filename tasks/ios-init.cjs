@@ -6,23 +6,26 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 const { getConfig } = require('../lib/config.cjs');
+const { runTauri } = require('../lib/tauri-cli.cjs');
 
 const ROOT_DIR = process.env.HOUND_BUILD_ROOT || path.resolve(__dirname, '../../..');
 
 /**
- * 清理旧的 iOS 生成目录并重新初始化
- * @returns {boolean}
+ * 清理旧的 iOS 生成目录并重新初始化。
+ * 直接调用 Tauri CLI（lib/tauri-cli.cjs），不依赖 PATH 中的裸 tauri 命令。
+ * @param {{ log?: (text: string) => void }} [ctx]
+ * @returns {Promise<boolean>}
  */
-function initIos() {
+async function initIos(ctx) {
   const tauriDir = getConfig().project.tauriDir || 'src-tauri';
   const genDir = path.join(ROOT_DIR, tauriDir, 'gen', 'apple');
   if (fs.existsSync(genDir)) {
     fs.rmSync(genDir, { recursive: true, force: true });
   }
-  execSync('tauri ios init', { cwd: ROOT_DIR, stdio: 'inherit' });
-  return true;
+  const r = await runTauri(['ios', 'init'], { onLine: ctx && ctx.log });
+  for (const g of r.guides) if (ctx && ctx.log) ctx.log(`[hint] ${g}`);
+  return r.ok;
 }
 
 module.exports = {

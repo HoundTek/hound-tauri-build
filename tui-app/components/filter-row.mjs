@@ -8,9 +8,7 @@
 import { button } from './button.mjs';
 import { hLayout } from './h-layout.mjs';
 import { toggleLevel } from './filter-bar.mjs';
-import { charWidth } from '../utils/char-width.mjs';
-import { textWidth } from '../utils/text-width.mjs';
-import { skipAnsi } from '../utils/ansi.mjs';
+import { term, core } from '../utils/term.mjs';
 import { theme } from '../utils/theme.mjs';
 
 const LEVELS = ['success', 'warning', 'info', 'error', 'log'];
@@ -31,11 +29,12 @@ function visToCharIdx(line, visX) {
   let visW = 0;
   while (charIdx < line.length && visW < visX) {
     if (line[charIdx] === '\x07' || line[charIdx] === '\x1b') {
-      charIdx = skipAnsi(line, charIdx);
+      charIdx = core.skipAnsi(line, charIdx);
       continue;
     }
-    visW += charWidth(line[charIdx]);
-    charIdx++;
+    const g = core.graphemes(line.slice(charIdx))[0];
+    visW += g ? g.w : 0;
+    charIdx += g ? g.text.length : 1;
   }
   return charIdx;
 }
@@ -102,7 +101,7 @@ export function createFilterRow(filterState, onUpdate) {
   /** 渲染筛选行：编辑时不反白；搜索框有内容时焦点高亮，等级按钮始终焦点高亮 */
   function render(totalWidth, focused, rightHint) {
     const hint = rightHint || '';
-    const hintW = hint ? textWidth(hint) + 1 : 0;
+    const hintW = hint ? term.width(hint) + 1 : 0;
     const items = buildItems(totalWidth, hintW);
     const layout = hLayout(items, totalWidth);
 
@@ -123,7 +122,7 @@ export function createFilterRow(filterState, onUpdate) {
     // 右对齐附加提示（如任务结束后的 exit 提示）——按视觉宽度处理，避免 ANSI 序列被切片
     if (hint) {
       const base = layout.line.replace(/[ \t]+$/, '');
-      const bw = textWidth(base);
+      const bw = term.width(base);
       if (bw + hintW <= totalWidth) {
         layout.line = base + ' '.repeat(totalWidth - bw - hintW) + ' ' + hint;
       }

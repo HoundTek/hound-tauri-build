@@ -6,13 +6,29 @@
  * @author hound-builder
  */
 
-import { skipAnsi, PREFIX_W } from './ansi.mjs';
-import { charWidth } from './char-width.mjs';
+import { core, term } from './term.mjs';
 
 // ── ANSI 常量 ───────────────────────────────────────
 
 const REV     = '\x1b[7m';
 const REV_OFF = '\x1b[27m';
+
+const PREFIX_W = term.PREFIX_W;
+
+/**
+ * 从 line[i] 读取一个显示单元：ANSI 序列返回 { ansi: true, len }，
+ * 可见字符返回一个 grapheme cluster 的 { ansi: false, len, w }。
+ * @param {string} line
+ * @param {number} i
+ * @returns {{ ansi: boolean, len: number, w: number }}
+ */
+function readUnit(line, i) {
+  if (line[i] === '\x07' || line[i] === '\x1b') {
+    return { ansi: true, len: core.skipAnsi(line, i) - i, w: 0 };
+  }
+  const g = core.graphemes(line.slice(i))[0];
+  return g ? { ansi: false, len: g.text.length, w: g.w } : { ansi: false, len: 1, w: 0 };
+}
 
 // ── 行级高亮 ────────────────────────────────────────
 
@@ -57,28 +73,27 @@ function highlightRange(line, colStart, colEnd) {
   let srcRev = false;
 
   while (i < line.length && visCol < colEnd) {
-    if (line[i] === '\x07' || line[i] === '\x1b') {
-      const start = i;
-      i = skipAnsi(line, i);
+    const unit = readUnit(line, i);
+    if (unit.ansi) {
+      const seq = line.slice(i, i + unit.len);
+      i += unit.len;
       // 跟踪源文本反白状态（SGR 序列）
-      const seq = line.slice(start, i);
       if (seq.startsWith('\x1b[') && seq.endsWith('m')) {
         const params = seq.slice(2, -1).split(';');
         if (params.includes('0') || params.includes('27')) srcRev = false;
         else if (params.includes('7')) srcRev = true;
       }
-      if (!started) result += line.slice(start, i);
+      if (!started) result += seq;
       continue;
     }
 
-    const cw = charWidth(line[i]);
     if (!started && visCol >= colStart) {
       result += '\x1b[0m' + REV;
       started = true;
     }
-    visCol += cw;
-    result += line[i];
-    i++;
+    visCol += unit.w;
+    result += line.slice(i, i + unit.len);
+    i += unit.len;
   }
 
   if (started) result += REV_OFF;
@@ -106,14 +121,11 @@ function underlineRange(line, colStart, colEnd) {
   let sIdx = -1;
   let eIdx = -1;
   while (i < line.length && eIdx < 0) {
-    if (line[i] === '\x07' || line[i] === '\x1b') {
-      i = skipAnsi(line, i);
-      continue;
-    }
-    const cw = charWidth(line[i]);
+    const unit = readUnit(line, i);
+    if (unit.ansi) { i += unit.len; continue; }
     if (sIdx < 0 && visCol >= colStart) sIdx = i;
-    visCol += cw;
-    i++;
+    visCol += unit.w;
+    i += unit.len;
     if (visCol >= colEnd) { eIdx = i; break; }
   }
   if (sIdx < 0) return line;

@@ -7,6 +7,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { getConfig } = require('../lib/config.cjs');
 
 const ROOT_DIR = process.env.HOUND_BUILD_ROOT || path.resolve(__dirname, '../../..');
 const PKG_DIR = path.resolve(__dirname, '..');
@@ -16,7 +17,8 @@ const PKG_DIR = path.resolve(__dirname, '..');
  * @returns {boolean} 是否成功
  */
 function initLinuxCross() {
-  const srcTauriDir = path.join(ROOT_DIR, 'src-tauri');
+  const tauriDir = getConfig().project.tauriDir || 'src-tauri';
+  const srcTauriDir = path.join(ROOT_DIR, tauriDir);
   if (!fs.existsSync(srcTauriDir)) {
     console.warn('Warning: src-tauri/ not found — is this a Tauri project?');
     return false;
@@ -25,6 +27,7 @@ function initLinuxCross() {
   const templates = [
     { src: 'Cross.toml', dest: 'Cross.toml' },
     { src: 'Dockerfile.cross-linux', dest: 'Dockerfile.cross-linux' },
+    { src: 'Dockerfile.cross-linux-arm64', dest: 'Dockerfile.cross-linux-arm64' },
     { src: 'Dockerfile.cross-windows', dest: 'Dockerfile.cross-windows' },
   ];
 
@@ -40,9 +43,28 @@ function initLinuxCross() {
     if (!fs.existsSync(destPath)) {
       fs.copyFileSync(srcPath, destPath);
       console.log(`Created ${tauriDir}/${dest}`);
-    } else {
-      console.log(`${tauriDir}/${dest} already exists, skipping`);
+      continue;
     }
+
+    // Cross.toml 已存在：合并模板中缺失的 [target.*] 段落（不覆盖用户配置）
+    if (dest === 'Cross.toml') {
+      const existing = fs.readFileSync(destPath, 'utf8');
+      const tpl = fs.readFileSync(srcPath, 'utf8');
+      const blocks = tpl.split(/(?=^\[target\.)/m).filter((b) => b.startsWith('[target.'));
+      let appended = false;
+      for (const block of blocks) {
+        const header = block.split('\n', 1)[0].trim();
+        if (!existing.includes(header)) {
+          fs.appendFileSync(destPath, (existing.endsWith('\n') ? '\n' : '\n\n') + block.trimEnd() + '\n');
+          console.log(`Appended ${header} to ${tauriDir}/${dest}`);
+          appended = true;
+        }
+      }
+      if (!appended) console.log(`${tauriDir}/${dest} already exists, skipping`);
+      continue;
+    }
+
+    console.log(`${tauriDir}/${dest} already exists, skipping`);
   }
 
   return true;

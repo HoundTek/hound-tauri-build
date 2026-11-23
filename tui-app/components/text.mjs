@@ -1,37 +1,11 @@
 /**
  * @file 文本样式组件
  * @description 提供带 ANSI 样式的文本渲染能力，支持颜色、粗体、下划线等效果。
+ *   薄封装：样式与宽度操作全部委托 term（lib/term）。
  * @module text
- * @author hound-builder
  */
 
-import { ansiWidth as textWidth, ansiTruncate } from '../utils/ansi.mjs';
-
-/**
- * ANSI 重置序列，仅重置前景色、粗细和下划线，保留背景色
- * @type {string}
- */
-const RST = '\x1b[39;22;24m';
-
-/**
- * 文本样式 ANSI 转义码映射
- * @type {Record<string, string>}
- */
-const STYLES = {
-  bold: '\x1b[1m',
-  underline: '\x1b[4m',
-  dim: '\x1b[2m',
-};
-
-/**
- * 前景色 ANSI 转义码映射
- * @type {Record<string, string>}
- */
-const COLORS = {
-  red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m',
-  blue: '\x1b[34m', magenta: '\x1b[35m', cyan: '\x1b[36m',
-  white: '\x1b[37m', gray: '\x1b[90m',
-};
+import { term } from '../utils/term.mjs';
 
 /**
  * 渲染带样式的文本，可选颜色、粗体、下划线、宽度填充
@@ -40,22 +14,15 @@ const COLORS = {
  * @returns {string}
  */
 export function text(content, opts = {}) {
-  let s = '';
+  let s = term.style;
 
-  if (opts.color && COLORS[opts.color]) s += COLORS[opts.color];
-  if (opts.bold) s += STYLES.bold;
-  if (opts.underline) s += STYLES.underline;
-  if (opts.dim) s += STYLES.dim;
+  if (opts.color && typeof s[opts.color] === 'function') s = s[opts.color];
+  if (opts.bold) s = s.bold;
+  if (opts.underline) s = s.underline;
+  if (opts.dim) s = s.dim;
 
-  s += content;
+  const styled = s(content);
 
-  if (s !== content) s += RST;
-
-  if (opts.width != null) {
-    const need = opts.width - textWidth(content);
-    if (need > 0) s += ' '.repeat(need);
-    else if (need < 0) s = ansiTruncate(s, opts.width);
-  }
-
-  return s;
+  if (opts.width != null) return term.pad(styled, opts.width);
+  return styled;
 }

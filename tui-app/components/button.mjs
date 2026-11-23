@@ -5,7 +5,7 @@
  * @author hound-builder
  */
 
-import { textWidth } from '../utils/text-width.mjs';
+import { term } from '../utils/term.mjs';
 import { theme } from '../utils/theme.mjs';
 
 /**
@@ -31,7 +31,7 @@ export function button(label, opts = {}) {
   if (!active || opts.color) s += theme.reset;
 
   if (opts.width != null) {
-    const need = opts.width - textWidth(inner);
+    const need = opts.width - term.width(inner);
     if (need > 0) s += ' '.repeat(need);
   }
 

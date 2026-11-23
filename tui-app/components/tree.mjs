@@ -5,7 +5,7 @@
  * @author hound-builder
  */
 
-import { textWidth } from '../utils/text-width.mjs';
+import { term } from '../utils/term.mjs';
 
 const G = '\x1b[36m';
 const R = '\x1b[39m';
@@ -51,6 +51,10 @@ export function collectChain(node) {
 /**
  * 遍历树，产出渲染行、行→节点映射、行→可点击标记列表。
  * 三个调用方（drawTree / drawTreeWithMap / treeClick）共享此遍历。
+ * @param {object} [opts]
+ * @param {(node) => string} [opts.renderNode] - 节点内容渲染函数
+ * @param {boolean} [opts.expandChains] - 跳过单链压缩（每个节点独占一行）。
+ *   链压缩行更宽（"a / b / c"），宽度受限时展开可显著降低最大行宽。
  * @returns {{ lines: string[], nodeAtLine: object[], markers: (null|{node, col, width}[])[] }}
  */
 export function walkTree(node, opts = {}) {
@@ -71,7 +75,7 @@ export function walkTree(node, opts = {}) {
       lines.push(line);
       nodeAtLine.push(n);
       if (hasKids) {
-        const col = textWidth(prefix) + textWidth(conn);
+        const col = term.width(prefix) + term.width(conn);
         markers.push([{ node: n, col, width: 2 }]);
       } else {
         markers.push(null);
@@ -79,9 +83,9 @@ export function walkTree(node, opts = {}) {
       return;
     }
 
-    // 链压缩
+    // 链压缩（expandChains 时跳过：每个节点独占一行，降低最大行宽）
     const chain = collectChain(n);
-    if (chain.length > 1) {
+    if (!opts.expandChains && chain.length > 1) {
       // 折叠单链：只显示最左侧一个展开/折叠按钮，其余节点纯文本
       const tail = chain[chain.length - 1];
       const tailIsLeaf = !tail.children || tail.children.length === 0;
@@ -99,7 +103,7 @@ export function walkTree(node, opts = {}) {
       const hasSub = first.children && first.children.length > 0;
       const fm = hasSub ? (first.collapsed ? ARROW_COLLAPSE : ARROW_EXPAND) : '';
       const lineMarkers = fm
-        ? [{ node: first, col: textWidth(prefix) + textWidth(conn), width: textWidth(fm) }]
+        ? [{ node: first, col: term.width(prefix) + term.width(conn), width: term.width(fm) }]
         : [];
       markers.push(lineMarkers.length > 0 ? lineMarkers : null);
 
@@ -118,7 +122,7 @@ export function walkTree(node, opts = {}) {
     const line = prefix + conn + marker + render(n);
     lines.push(line);
     nodeAtLine.push(n);
-    const col = textWidth(prefix) + textWidth(conn);
+    const col = term.width(prefix) + term.width(conn);
     markers.push([{ node: n, col, width: 2 }]);
 
     const indent = isRoot ? '' : prefix + (isLast ? '    ' : G + '\u2502' + R + '   ');

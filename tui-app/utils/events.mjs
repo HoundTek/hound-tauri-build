@@ -165,7 +165,7 @@ function tryParseMouse(buf) {
     const y = parseInt(sgr[3], 10) - 1;
     const action = sgr[4];
     let type;
-    if (btn === 64 || btn === 65) type = 'scroll';
+    if (btn & 64) type = 'scroll';
     else if (action === 'M' && btn <= 2) type = 'press';
     else if (action === 'm' && btn <= 2) type = 'release';
     else return { parsed: null, consumed: sgr[0].length }; // 忽略其他（motion等）
@@ -203,7 +203,8 @@ function emitMouse(parsed) {
   } else if (parsed.type === 'release') {
     emit('mouse', { type: 'up', btn: parsed.btn, x: parsed.x, y: parsed.y });
   } else if (parsed.type === 'scroll') {
-    emit('scroll', { dir: parsed.btn === 64 ? 'up' : 'down', x: parsed.x, y: parsed.y });
+    // btn: bit0=方向（0上1下），bit2(4)=shift
+    emit('scroll', { dir: (parsed.btn & 1) ? 'down' : 'up', x: parsed.x, y: parsed.y, shift: !!(parsed.btn & 4) });
   }
 }
 

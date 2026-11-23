@@ -37,6 +37,10 @@
   "peerDependencies": {
     "@tauri-apps/cli": "^2.0.0"
   },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "string-width": "^4.2.3"
+  },
   "engines": {
     "node": ">=18"
   }

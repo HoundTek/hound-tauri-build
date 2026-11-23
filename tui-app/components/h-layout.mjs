@@ -5,7 +5,7 @@
  * @author hound-builder
  */
 
-import { ansiWidth as textWidth, ansiTruncate } from '../utils/ansi.mjs';
+import { term } from '../utils/term.mjs';
 
 /**
  * 将多个子项水平排列到指定宽度的一行中
@@ -17,21 +17,21 @@ export function hLayout(items, totalWidth) {
   let line = '';
   const slots = [];
   for (const item of items) {
-    const x = textWidth(line);
+    const x = term.width(line);
     if (x >= totalWidth) break; // 已满
 
     const avail = totalWidth - x;
     const fit = Math.min(item.width, avail);
-    const clipped = fit < item.width ? ansiTruncate(item.text, fit) : item.text;
+    const clipped = fit < item.width ? term.truncate(item.text, fit) : item.text;
 
     line += clipped;
-    const actualW = textWidth(clipped);
+    const actualW = term.width(clipped);
     const pad = fit - actualW;
     if (pad > 0) line += ' '.repeat(pad);
 
     slots.push({ x, width: fit });
   }
-  const rest = totalWidth - textWidth(line);
+  const rest = totalWidth - term.width(line);
   if (rest > 0) line += ' '.repeat(rest);
   return { line, slots };
 }

@@ -1,4 +1,4 @@
-import { wrapLine } from '../utils/wrap-line.mjs';
+import { term } from '../utils/term.mjs';
 
 const origin = '中文字符、全角字符ＡＢＣ、'
   + 'ANSI:\x1b[31m红色\x1b[0m '
@@ -11,7 +11,7 @@ const origin = '中文字符、全角字符ＡＢＣ、'
   + 'APC:\x1b_test\x1b\\ '
   + 'ASCII🎉';
 export function makePage() {
-  const lines = wrapLine(origin, 9);
-  // 在每一行后添加'|'标记
-  return lines.map((l) => l + '|');
+  // term.wrap 不补空格：demo 在行尾加 '|' 标记验证宽度边界
+  const lines = term.wrap(origin, 9);
+  return lines.map((l) => term.pad(l, 9) + '|');
 }

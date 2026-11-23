@@ -7,9 +7,7 @@
 
 import { on } from './events.mjs';
 import { treeClick, collectChain } from '../components/tree.mjs';
-import { textWidth } from './text-width.mjs';
-import { skipAnsi, stripAnsi, padLine, PREFIX_W } from './ansi.mjs';
-import { charWidth } from './char-width.mjs';
+import { term, core } from './term.mjs';
 
 // ── 只读状态 ───────────────────────────────────────
 
@@ -130,7 +128,7 @@ export function cursorActualCol(logCtx) {
  * @returns {number} 可见内容宽度
  */
 export function lineWidth(line) {
-  return textWidth((line || '').replace(/[ \t]+$/, ''));
+  return term.width((line || '').replace(/[ \t]+$/, ''));
 }
 
 /**
@@ -235,11 +233,11 @@ function findCheckboxes(line) {
   const chars = new Set(['\u2610', '\u2611']);
   while (i < line.length) {
     if (line[i] === '\x07' || line[i] === '\x1b') {
-      i = skipAnsi(line, i);
+      i = core.skipAnsi(line, i);
       continue;
     }
     if (chars.has(line[i])) {
-      results.push({ col: textWidth(line.slice(0, i)), idx: results.length });
+      results.push({ col: term.width(line.slice(0, i)), idx: results.length });
     }
     i++;
   }
@@ -355,6 +353,14 @@ export function initFocus(opts) {
       onUpdate(); return;
     }
 
+    // shift+←/→ → 横向滚动树视图（treeX，步进 4 列）
+    if (k.shift && (k.name === 'left' || k.name === 'right')) {
+      const maxOff = Math.max(0, (ctx.contentW || 0) - (ctx.viewW || 0));
+      const delta = k.name === 'left' ? -4 : 4;
+      ctx.treeX = Math.max(0, Math.min(maxOff, (ctx.treeX || 0) + delta));
+      onUpdate(); return;
+    }
+
     // ←/→/h/l → 行内元素导航（同时确保光标在视图内）
     if (k.name === 'left' || k.name === 'right' || k.name === 'h' || k.name === 'l') {
       const lineIdx = s.treeCursor;
@@ -447,7 +453,7 @@ export function initFocus(opts) {
 
     /** 当前行纯文本（用于词移动） */
     function curText() {
-      return stripAnsi(ctx.logLines[s.logCursor] || '');
+      return term.plain(ctx.logLines[s.logCursor] || '');
     }
 
     /** 消费 pending count（无则 1），并清零 */
@@ -464,7 +470,7 @@ export function initFocus(opts) {
       logSearch.pos = -1;
       if (q) {
         for (let li = 0; li < ctx.logLines.length; li++) {
-          const text = stripAnsi(ctx.logLines[li]).toLowerCase();
+          const text = term.plain(ctx.logLines[li]).toLowerCase();
           let idx = text.indexOf(q);
           while (idx >= 0) {
             logSearch.matches.push({ line: li, col: idx, len: q.length });
@@ -535,7 +541,7 @@ export function initFocus(opts) {
         onUpdate();
       } else {
         // 无 pending count 时 0 = 行首
-        moveTo(s.logCursor, PREFIX_W);
+        moveTo(s.logCursor, term.PREFIX_W);
       }
       return;
     }
@@ -622,7 +628,7 @@ export function initFocus(opts) {
           vimMode.mode = 'follow'; vimMode.count = 0;
           logSel.active = false;
           const lastW = lineWidth(ctx.logLines[total - 1] || '');
-          moveTo(total - 1, Math.max(PREFIX_W, lastW));
+          moveTo(total - 1, Math.max(term.PREFIX_W, lastW));
         }
       } else {
         _consecBoundary = 0;
@@ -631,9 +637,9 @@ export function initFocus(opts) {
       return;
     }
 
-    // ── 左右移动（基于实际列，钳制在 [PREFIX_W, lineWidth]） ──
+    // ── 左右移动（基于实际列，钳制在 [term.PREFIX_W, lineWidth]） ──
     if (k.name === 'left' || k.name === 'h') {
-      const n = takeCount(); moveTo(s.logCursor, Math.max(PREFIX_W, actualCol() - n));
+      const n = takeCount(); moveTo(s.logCursor, Math.max(term.PREFIX_W, actualCol() - n));
       _consecBoundary = 0;
       if (vimMode.mode === 'follow') vimMode.mode = 'normal';
       return;
@@ -647,7 +653,7 @@ export function initFocus(opts) {
           vimMode.mode = 'follow'; vimMode.count = 0;
           logSel.active = false;
           const lastW = lineWidth(ctx.logLines[total - 1] || '');
-          moveTo(total - 1, Math.max(PREFIX_W, lastW));
+          moveTo(total - 1, Math.max(term.PREFIX_W, lastW));
         }
       } else {
         _consecBoundary = 0;
@@ -661,7 +667,7 @@ export function initFocus(opts) {
       takeCount();
       const t = curText();
       const first = t.search(/\S/);
-      moveTo(s.logCursor, first < 0 ? PREFIX_W : Math.max(PREFIX_W, first));
+      moveTo(s.logCursor, first < 0 ? term.PREFIX_W : Math.max(term.PREFIX_W, first));
       return;
     }
     if (k.name === '$') {
@@ -813,7 +819,7 @@ export function initFocus(opts) {
         _lastYTime = 0;
         if (onCopy) {
           k.consumed = true;
-          onCopy({ active: true, startLine: s.logCursor, endLine: s.logCursor, startCol: PREFIX_W, endCol: Infinity });
+          onCopy({ active: true, startLine: s.logCursor, endLine: s.logCursor, startCol: term.PREFIX_W, endCol: Infinity });
           onUpdate();
         }
         return;
@@ -962,7 +968,7 @@ export function initFocus(opts) {
     if (lineIdx < 0 || lineIdx >= ctx.lineToEntry.length) return;
 
     focusState.logCursor = lineIdx;
-    const col = Math.max(PREFIX_W, e.x - 1); // 减去边框 1 列，跳过前缀
+    const col = Math.max(term.PREFIX_W, e.x - 1); // 减去边框 1 列，跳过前缀
     focusState.logCol = col;
     _dragStart = { line: lineIdx, col };
     logSel.selecting = true;
@@ -990,7 +996,7 @@ export function initFocus(opts) {
       const lineIdx = minIdx + (e.y - ctx.y);
       if (lineIdx < 0 || lineIdx >= ctx.lineToEntry.length) return;
       logSel.endLine = lineIdx;
-      logSel.endCol = Math.max(PREFIX_W, e.x - 1);
+      logSel.endCol = Math.max(term.PREFIX_W, e.x - 1);
       logSel.active = true;
       onUpdate();
       return;
@@ -1000,7 +1006,7 @@ export function initFocus(opts) {
     if (e.y < ctx.y && ctx.scrollState.maxIndex > 0) {
       ctx.scrollState.maxIndex--;
       logSel.endLine = minIdx - 1;
-      logSel.endCol = PREFIX_W;
+      logSel.endCol = term.PREFIX_W;
       logSel.active = true;
       onUpdate();
       return;

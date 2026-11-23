@@ -6,8 +6,7 @@
  */
 
 import { on, off } from '../utils/events.mjs';
-import { textWidth } from '../utils/text-width.mjs';
-import { padLine } from '../utils/ansi.mjs';
+import { term } from '../utils/term.mjs';
 import { statusBar } from './status-bar.mjs';
 import { theme } from '../utils/theme.mjs';
 
@@ -34,23 +33,23 @@ export function scroll(height, width, content, maxIndex, cursorLine, statusExtra
   if (maxIndex < height - 2) maxIndex = height - 2;
 
   // 检查是否有行宽度溢出
-  const overflow = content.some((l) => textWidth(l) > width);
+  const overflow = content.some((l) => term.width(l) > width);
   if (overflow) {
     const msg = 'Width overflow';
-    const padL = Math.max(0, Math.floor((width - textWidth(msg)) / 2));
+    const padL = Math.max(0, Math.floor((width - term.width(msg)) / 2));
     const mid = Math.floor(height / 2);
     const rows = [];
     for (let y = 0; y < height; y++) {
       const line = y === mid ? ' '.repeat(padL) + msg : ' '.repeat(Math.max(0, width));
       // 主题适配：加粗红字 + 反白强调，不写死背景色
-      rows.push(theme.dangerBold + theme.rev + padLine(line, Math.max(0, width)) + theme.revOff + theme.reset);
+      rows.push(theme.dangerBold + theme.rev + term.pad(line, Math.max(0, width)) + theme.revOff + theme.reset);
     }
     return rows;
   }
 
   // 内容高度小于等于高度：直接显示，下面补空行
   if (total <= height) {
-    const rows = content.map((l) => padLine(l, width));
+    const rows = content.map((l) => term.pad(l, width));
     // 有状态栏时：额外加1行给状态栏，无空行
     const targetH = (statusExtra || statusPrefix) ? height + 1 : height;
     while (rows.length < targetH) rows.push(' '.repeat(width));
@@ -58,9 +57,9 @@ export function scroll(height, width, content, maxIndex, cursorLine, statusExtra
     if (statusExtra || statusPrefix) {
       const contentRows = rows.slice(0, targetH - 1);
       const status = statusBar({ minIndex: 0, maxIndex: total - 1, total, cursorLine, cursorCol });
-      const prefixW = statusPrefix ? textWidth(statusPrefix) + 1 : 0;
-      const extraW = statusExtra ? textWidth(statusExtra) + 1 : 0;
-      const mid = padLine(status, width - prefixW - extraW);
+      const prefixW = statusPrefix ? term.width(statusPrefix) + 1 : 0;
+      const extraW = statusExtra ? term.width(statusExtra) + 1 : 0;
+      const mid = term.pad(status, width - prefixW - extraW);
       contentRows.push((statusPrefix ? statusPrefix + ' ' : '') + mid + (statusExtra ? ' ' + statusExtra : ''));
       return contentRows;
     }
@@ -75,20 +74,20 @@ export function scroll(height, width, content, maxIndex, cursorLine, statusExtra
   const bodyH = hasStatus ? height : height + 1;
   if (bodyH <= 0) {
     // 只有一行，直接显示 maxIndex 对应的那行
-    return [padLine(content[maxIndex] || '', width)];
+    return [term.pad(content[maxIndex] || '', width)];
   }
 
   const minIndex = Math.max(0, maxIndex - bodyH + 1);
   const visible = content.slice(minIndex, maxIndex + 1);
 
-  const rows = visible.map((l) => padLine(l, width));
+  const rows = visible.map((l) => term.pad(l, width));
   while (rows.length < bodyH) rows.push(' '.repeat(width));
 
   const status = statusBar({ minIndex, maxIndex, total, cursorLine, cursorCol });
   // 状态行左端可加模式前缀（如 vim VISUAL），右端可附加按钮文本（右对齐）
-  const prefixW = statusPrefix ? textWidth(statusPrefix) + 1 : 0;
-  const extraW = statusExtra ? textWidth(statusExtra) + 1 : 0;
-  const mid = padLine(status, width - prefixW - extraW);
+  const prefixW = statusPrefix ? term.width(statusPrefix) + 1 : 0;
+  const extraW = statusExtra ? term.width(statusExtra) + 1 : 0;
+  const mid = term.pad(status, width - prefixW - extraW);
   rows.push((statusPrefix ? statusPrefix + ' ' : '') + mid + (statusExtra ? ' ' + statusExtra : ''));
 
   return rows;
@@ -104,7 +103,7 @@ export function scroll(height, width, content, maxIndex, cursorLine, statusExtra
  * @param {() => void} [opts.onUpdate] — 状态变化后立即调用（如触发重绘）
  * @param {(atBottom: boolean) => void} [opts.onScrollChange] — 滚动位置变化回调（atBottom = 是否在底部）
  * @param {() => boolean} [opts.isDisabled] — 为 true 时屏蔽滚轮/键盘滚动
- * @returns {{ state: { maxIndex: number, sticky: boolean }, render: (h,w,content) => string[], destroy: () => void, setRect: (y,height) => void }}
+ * @returns {{ state: { maxIndex: number, sticky: boolean }, render: (h,w,content) => string[], destroy: () => void, setRect: (y,height,x?,width?) => void }}
  */
 export function useScroll(opts = {}) {
   const { maxIndex = 0, sticky: enableSticky = false, isSticky, isPinned, matchKey, onUpdate, onScrollChange, isDisabled } = opts;
@@ -141,7 +140,9 @@ export function useScroll(opts = {}) {
 
   const onWheel = (e) => {
     if (isDisabled && isDisabled()) return;
+    if (e.shift) return; // shift+滚轮留给横向滚动处理
     if (rect && (e.y < rect.y || e.y >= rect.y + rect.height)) return;
+    if (rect && rect.width != null && (e.x < rect.x || e.x >= rect.x + rect.width)) return;
     if (e.dir === 'up') mkUp();
     else mkDown();
   };
@@ -162,7 +163,7 @@ export function useScroll(opts = {}) {
     return scroll(height, width, content, state.maxIndex, cursorLine, statusExtra, statusPrefix, cursorCol);
   }
 
-  function setRect(y, height) { rect = { y, height }; }
+  function setRect(y, height, x, width) { rect = { y, height, x: x || 0, width }; }
 
   function destroy() {
     off('key', onKey);

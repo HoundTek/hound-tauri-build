@@ -10,32 +10,53 @@
 const path = require('path');
 const { collectPlatform } = require('../lib/artifacts.cjs');
 const { getConfig } = require('../lib/config.cjs');
+const { stagedBuild, plainBuild, webBuild, frontendDistDir } = require('../lib/cross-build.cjs');
+const { runTauri } = require('../lib/tauri-cli.cjs');
 
 // 图标生成器入口（lib/ 下的 gen-icons.cjs）
 const GEN_CMD = `node "${path.join(__dirname, '..', 'lib', 'gen-icons.cjs')}"`;
 
 const config = getConfig();
 const TAURI_DIR = config.project.tauriDir || 'src-tauri';
-const FRONTEND_DIR = config.project.frontendDir || 'src';
+// 前端产物目录：htb.config.json 显式覆盖 > tauri.conf.json build.frontendDist > 'dist'
+const FRONTEND_DIR = config.project.frontendDir || frontendDistDir(TAURI_DIR) || 'dist';
 
 // iOS 构建 flag（来自统一配置，HTB_* 环境变量由 config.cjs 扁平化产生）
 const IOS_SIM_TARGET = 'aarch64-sim';
-const IOS_TARGET_FLAG = process.env.HTB_IOS_TARGET === 'sim' ? ` --target ${IOS_SIM_TARGET}` : '';
-const IOS_NO_SIGN_FLAG = process.env.HTB_IOS_SIGN === 'false' ? ' --no-sign' : '';
-const IOS_BUILD_CMD = `tauri ios build${IOS_TARGET_FLAG}${IOS_NO_SIGN_FLAG}`;
+const IOS_TARGET_ARGS = process.env.HTB_IOS_TARGET === 'sim' ? ['--target', IOS_SIM_TARGET] : [];
+const IOS_NO_SIGN_ARGS = process.env.HTB_IOS_SIGN === 'false' ? ['--no-sign'] : [];
+const IOS_BUILD_ARGS = ['ios', 'build', ...IOS_TARGET_ARGS, ...IOS_NO_SIGN_ARGS];
+
+// 交叉编译目标三元组
+const TARGET_WIN = 'x86_64-pc-windows-gnu';
+const TARGET_WIN_ARM64 = 'aarch64-pc-windows-msvc';
+const TARGET_LINUX = 'x86_64-unknown-linux-gnu';
+const TARGET_LINUX_ARM64 = 'aarch64-unknown-linux-gnu';
+const TARGET_MAC = 'x86_64-apple-darwin';
+const TARGET_MAC_ARM64 = 'aarch64-apple-darwin';
+const TARGET_MAC_UNIVERSAL = 'universal-apple-darwin';
 
 /**
- * 交叉编译通用命令：复制前端产物到临时目录 → tauri build --runner cross → 清理。
- * 用 `code=$?` 捕获 tauri build 退出码，清理后再传递（保证临时目录总被清理）。
+ * 交叉编译（win/linux）：暂存前端产物 → tauri build --runner cross → finally 清理。
+ * 纯 Node 实现（lib/cross-build.cjs），替代原 POSIX shell 拼接。
  */
-const CROSS_CMD = (target, extra = '') => [
-  `rm -rf ${TAURI_DIR}/.htb-frontend-dist`,
-  `cp -r ${FRONTEND_DIR} ${TAURI_DIR}/.htb-frontend-dist`,
-  `tauri build --runner cross --target ${target}${extra ? ' ' + extra : ''} --config '{"build":{"frontendDist":"./.htb-frontend-dist"}}'`,
-  'code=$?',
-  `rm -rf ${TAURI_DIR}/.htb-frontend-dist`,
-  'exit $code',
-].join(' && ');
+const cross = (tauriArgs) => (ctx) =>
+  stagedBuild({ tauriArgs, tauriDir: TAURI_DIR, frontendDir: FRONTEND_DIR, onLine: ctx && ctx.log, abort: ctx && ctx.abort });
+
+/** 原生构建（mac/android/ios/desktop）：tauri 透传，无暂存 */
+const plain = (tauriArgs) => (ctx) =>
+  plainBuild({ tauriArgs, onLine: ctx && ctx.log, abort: ctx && ctx.abort });
+
+/** 移动端构建（tauri android/ios build） */
+const mobile = (args) => async (ctx) => {
+  const r = await runTauri(args, { onLine: ctx && ctx.log, abort: ctx && ctx.abort });
+  for (const g of r.guides) if (ctx && ctx.log) ctx.log(`[hint] ${g}`);
+  return r.ok;
+};
+
+/** web 构建：纯前端（无 tauri 壳），产物为 frontendDir 目录本身 */
+const web = () => (ctx) =>
+  webBuild({ tauriDir: TAURI_DIR, frontendDir: FRONTEND_DIR, onLine: ctx && ctx.log, abort: ctx && ctx.abort });
 
 const CROSS_BUILD = { resource: 'resource:cross-build', mode: 'write' };
 const TAU_CLI = { resource: 'resource:tauri-cli', mode: 'write' };
@@ -59,64 +80,66 @@ const ICON_TASKS = ICON_PLATFORMS.map((p) => ({
 
 // ---- build:* 构建任务 ----
 
-// 交叉编译目标三元组
-const TARGET_WIN = 'x86_64-pc-windows-gnu';
-const TARGET_LINUX = 'x86_64-unknown-linux-gnu';
-const TARGET_MAC = 'x86_64-apple-darwin';
-const TARGET_MAC_UNIVERSAL = 'universal-apple-darwin';
-
-// 共享构建命令（build 和 build-quick 复用）
-const CMD_WIN = CROSS_CMD(TARGET_WIN, '--bundles nsis');
-const CMD_LINUX = CROSS_CMD(TARGET_LINUX);
-const CMD_ANDROID = 'tauri android build';
-
-const BUILD_CMD = {
-  win: CMD_WIN,
-  mac: `tauri build --target ${TARGET_MAC} --bundles app`,
-  'mac-universal': `tauri build --target ${TARGET_MAC_UNIVERSAL} --bundles app`,
-  linux: CMD_LINUX,
-  android: CMD_ANDROID,
-  ios: IOS_BUILD_CMD,
+// 共享构建（build 和 build-quick 复用）
+const BUILD_RUN = {
+  win: cross(['--runner', 'cross', '--target', TARGET_WIN, '--bundles', 'nsis']),
+  // Windows on ARM：MSVC 目标经 cargo-xwin 交叉编译（官方推荐路径，stagedBuild 与 runner 无关，直接复用）
+  'win-arm64': cross(['--runner', 'cargo-xwin', '--target', TARGET_WIN_ARM64, '--bundles', 'nsis']),
+  mac: plain(['--target', TARGET_MAC, '--bundles', 'app']),
+  'mac-arm64': plain(['--target', TARGET_MAC_ARM64, '--bundles', 'app']),
+  'mac-universal': plain(['--target', TARGET_MAC_UNIVERSAL, '--bundles', 'app']),
+  linux: cross(['--runner', 'cross', '--target', TARGET_LINUX]),
+  'linux-arm64': cross(['--runner', 'cross', '--target', TARGET_LINUX_ARM64]),
+  android: mobile(['android', 'build']),
+  ios: mobile(IOS_BUILD_ARGS),
+  web: web(),
 };
 // 构建前置：平台专属初始化（在 icon 之后执行）
 const BUILD_EXTRA_INIT = {
   linux: ['linux:init'],
+  'linux-arm64': ['linux:init'],
   android: ['android:signing'],
   ios: ['ios:init'],
 };
-// 图标依赖：mac-universal 复用 mac 图标（无独立 icon:mac-universal）
-const BUILD_ICON_DEP = { 'mac-universal': 'icon:mac' };
-const BUILD_PLATFORMS = ['win', 'mac', 'mac-universal', 'linux', 'android', 'ios'];
+// 图标依赖：mac-universal/mac-arm64 复用 mac 图标、win-arm64 复用 win 图标、
+// linux-arm64 复用 linux 图标（无独立 icon 任务）；web 无图标（null）
+const BUILD_ICON_DEP = { 'mac-universal': 'icon:mac', 'mac-arm64': 'icon:mac', 'win-arm64': 'icon:win', 'linux-arm64': 'icon:linux', web: null };
+const iconDeps = (p) => (p in BUILD_ICON_DEP ? (BUILD_ICON_DEP[p] ? [BUILD_ICON_DEP[p]] : []) : [`icon:${p}`]);
+const BUILD_PLATFORMS = ['win', 'win-arm64', 'mac', 'mac-arm64', 'mac-universal', 'linux', 'linux-arm64', 'android', 'ios', 'web'];
 const BUILD_TASKS = BUILD_PLATFORMS.map((p) => ({
   id: `build:${p}`,
   description: `build ${p}`,
-  dependsOn: [BUILD_ICON_DEP[p] || `icon:${p}`, ...(BUILD_EXTRA_INIT[p] || [])],
+  dependsOn: [...iconDeps(p), ...(BUILD_EXTRA_INIT[p] || [])],
   conflicts: [CROSS_BUILD],
-  run: { cmd: BUILD_CMD[p] },
+  run: { fn: BUILD_RUN[p] },
 }));
 
 // ---- build-quick:* 快速构建（跳过图标/初始化） ----
-const QUICK_CMD = {
-  desktop: 'tauri build',
-  mac: 'tauri build --bundles app',
-  'mac-universal': `tauri build --target ${TARGET_MAC_UNIVERSAL} --bundles app`,
-  win: CMD_WIN,
-  linux: CROSS_CMD(TARGET_LINUX, '--bundles deb appimage rpm'),
-  android: CMD_ANDROID,
-  ios: IOS_BUILD_CMD,
+const QUICK_RUN = {
+  desktop: plain([]),
+  mac: plain(['--bundles', 'app']),
+  'mac-arm64': plain(['--target', TARGET_MAC_ARM64, '--bundles', 'app']),
+  'mac-universal': plain(['--target', TARGET_MAC_UNIVERSAL, '--bundles', 'app']),
+  win: cross(['--runner', 'cross', '--target', TARGET_WIN, '--bundles', 'nsis']),
+  'win-arm64': cross(['--runner', 'cargo-xwin', '--target', TARGET_WIN_ARM64, '--bundles', 'nsis']),
+  linux: cross(['--runner', 'cross', '--target', TARGET_LINUX, '--bundles', 'deb', 'appimage', 'rpm']),
+  'linux-arm64': cross(['--runner', 'cross', '--target', TARGET_LINUX_ARM64, '--bundles', 'deb', 'appimage', 'rpm']),
+  android: mobile(['android', 'build']),
+  ios: mobile(IOS_BUILD_ARGS),
+  web: web(),
 };
-const QUICK_INIT = { linux: ['linux:init'] };
-const QUICK_PLATFORMS = ['desktop', 'mac', 'mac-universal', 'win', 'linux', 'android', 'ios'];
+const QUICK_INIT = { linux: ['linux:init'], 'linux-arm64': ['linux:init'] };
+const QUICK_PLATFORMS = ['desktop', 'mac', 'mac-arm64', 'mac-universal', 'win', 'win-arm64', 'linux', 'linux-arm64', 'android', 'ios', 'web'];
 const QUICK_TASKS = QUICK_PLATFORMS.map((p) => ({
   id: `build-quick:${p}`,
   description: `build-quick ${p}`,
   dependsOn: QUICK_INIT[p] || [],
   conflicts: [CROSS_BUILD],
-  run: { cmd: QUICK_CMD[p] },
+  run: { fn: QUICK_RUN[p] },
 }));
 
 // ---- collect:* 产物收集 ----
-const COLLECT_PLATFORMS = ['win', 'mac', 'mac-universal', 'linux', 'android', 'ios'];
+const COLLECT_PLATFORMS = ['win', 'win-arm64', 'mac', 'mac-arm64', 'mac-universal', 'linux', 'linux-arm64', 'android', 'ios', 'web'];
 const COLLECT_TASKS = COLLECT_PLATFORMS.map((p) => ({
   id: `collect:${p}`,
   description: `collect ${p} artifacts`,
@@ -125,7 +148,7 @@ const COLLECT_TASKS = COLLECT_PLATFORMS.map((p) => ({
 }));
 
 // ---- 聚合元任务 ----
-const DESKTOP = ['win', 'mac', 'mac-universal', 'linux'];
+const DESKTOP = ['win', 'win-arm64', 'mac', 'mac-arm64', 'mac-universal', 'linux', 'linux-arm64'];
 const MOBILE = ['android', 'ios'];
 const AGG_TASKS = [
   { id: 'build:desktop', description: 'build desktop all', dependsOn: DESKTOP.map((p) => `build:${p}`) },

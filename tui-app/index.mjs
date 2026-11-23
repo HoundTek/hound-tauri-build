@@ -9,21 +9,18 @@
 
 import net from 'net';
 import configModule from '../lib/config.cjs';
+import screenModule from '../lib/term/screen.cjs';
 import { makePage, running, toggleFinished, setScrollCallback, isFooterEditing, exitPanel, helpPanel,
          initFromTasks, onTaskStatus, onLogEntry, onBuildExit } from './pages/index.mjs';
 import { initEvents, on, destroyEvents } from './utils/events.mjs';
 import { advanceTick } from './utils/tick.mjs';
 import { logSel, vimMode, logSearch } from './utils/focus.mjs';
-import { getTerminalSize, initTerminalSize, updateTerminalSize } from './utils/terminal-size.mjs';
+import { getTerminalSize, initTerminalSize } from './utils/terminal-size.mjs';
+
+const { Screen } = screenModule;
 
 const tuiConfig = configModule.getConfig().tui;
 
-const ALT_ON   = '\x1b[?1049h';
-const ALT_OFF  = '\x1b[?1049l';
-const HOME     = '\x1b[H';
-const CLEAR_EOS = '\x1b[J';
-const HIDE     = '\x1b[?25l';
-const SHOW     = '\x1b[?25h';
 const WRAP_OFF = '\x1b[?7l';
 const WRAP_ON  = '\x1b[?7h';
 
@@ -33,21 +30,20 @@ if (!port || isNaN(port)) {
   process.exit(1);
 }
 
-// 双缓冲
-let back = 0;
-const bufs = ['', ''];
+// 差量渲染出口：双缓冲 + 逐帧 diff + ?2026 同步输出（终端支持时）
+const screen = new Screen(process.stdout);
 
 /**
- * 构建并输出一帧画面到 stdout（双缓冲）
+ * 构建并输出一帧画面（写入后台缓冲后差量 flush）
  * @returns {void}
  */
 function buildFrame() {
   advanceTick();
   try {
     const page = makePage();
-    bufs[back] = HOME + page.join('\n') + CLEAR_EOS;
-    back = 1 - back;
-    process.stdout.write(bufs[1 - back]);
+    screen.frame((buf) => {
+      for (let y = 0; y < page.length; y++) buf.write(0, y, page[y]);
+    });
   } catch (_) {
     // 渲染异常不杀死 TUI：跳过本帧，等待下帧重试
   }
@@ -181,7 +177,8 @@ function cleanupAndExit() {
  */
 function restoreTerminal() {
   try {
-    process.stdout.write(ALT_OFF + WRAP_ON + SHOW + '\x1b[?1002l\x1b[?1003l\x1b[?1006l');
+    process.stdout.write(WRAP_ON + '\x1b[?1002l\x1b[?1003l\x1b[?1006l');
+    screen.exit();
   } catch (_) {}
   try { process.stdin.setRawMode?.(false); } catch (_) {}
 }
@@ -225,11 +222,15 @@ function handleMessage(msg) {
       initFromTasks(msg.tasks || []);
       if (!started) {
         started = true;
-        process.stdout.write(ALT_ON + WRAP_OFF + HIDE);
+        process.stdout.write(WRAP_OFF);
+        screen.enter();
         initEvents();
         bindExitPanel();
         setScrollCallback(requestRedraw);
-        on('resize', redraw);
+        on('resize', ({ rows, columns }) => {
+          screen.resize(columns, rows);
+          redraw();
+        });
         initTerminalSize();
         redraw();
         updateTimer = setInterval(redraw, tuiConfig.refreshMs);

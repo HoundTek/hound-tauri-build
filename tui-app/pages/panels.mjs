@@ -6,7 +6,7 @@
  * @author hound-builder
  */
 
-import { ansiWidth as textWidth, ansiSlice as visSlice } from '../utils/ansi.mjs';
+import { term } from '../utils/term.mjs';
 import { theme } from '../utils/theme.mjs';
 
 /** 帮助页内容 */
@@ -46,7 +46,7 @@ export function renderExitPanel(output, panel, W, H) {
   const my = Math.max(0, Math.floor((H - modalH) / 2));
   const sel = panel.selected || 'n';
 
-  const padStr = (s, w) => s + ' '.repeat(Math.max(0, w - textWidth(s)));
+  const padStr = (s, w) => s + ' '.repeat(Math.max(0, w - term.width(s)));
 
   const lines = [
     ' \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510 ',
@@ -60,8 +60,8 @@ export function renderExitPanel(output, panel, W, H) {
 
   for (let r = 0; r < modalH && my + r < H; r++) {
     const orig = output[my + r];
-    const left = visSlice(orig, 0, mx);
-    const right = visSlice(orig, mx + modalW, textWidth(orig));
+    const left = term.slice(orig, 0, mx);
+    const right = term.slice(orig, mx + modalW, term.width(orig));
     output[my + r] = left + theme.bold + lines[r] + theme.reset + right;
   }
 }
@@ -77,12 +77,12 @@ export function renderExitPanel(output, panel, W, H) {
 export function renderHelpPanel(output, panel, W, H) {
   if (!panel.visible) return;
 
-  const contentW = Math.max(2, ...HELP.map((l) => textWidth(l))) + 2;
+  const contentW = Math.max(2, ...HELP.map((l) => term.width(l))) + 2;
   const contentH = HELP.length + 2;
   const bx = Math.max(0, Math.floor((W - contentW) / 2));
   const by = Math.max(0, Math.floor((H - contentH) / 2));
 
-  const padStr = (s, w) => s + ' '.repeat(Math.max(0, w - textWidth(s)));
+  const padStr = (s, w) => s + ' '.repeat(Math.max(0, w - term.width(s)));
   const hlines = [
     '\u250c' + '\u2500'.repeat(contentW - 2) + '\u2510',
     ...HELP.map((l) => '\u2502' + padStr(l, contentW - 2) + '\u2502'),
@@ -91,8 +91,8 @@ export function renderHelpPanel(output, panel, W, H) {
 
   for (let r = 0; r < contentH && by + r < H; r++) {
     const orig = output[by + r];
-    const left = visSlice(orig, 0, bx);
-    const right = visSlice(orig, bx + contentW, textWidth(orig));
+    const left = term.slice(orig, 0, bx);
+    const right = term.slice(orig, bx + contentW, term.width(orig));
     const line = r === 1 ? theme.bold + hlines[r] : hlines[r];
     output[by + r] = left + theme.rev + line + theme.revOff + right;
   }

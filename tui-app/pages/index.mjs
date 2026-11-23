@@ -13,11 +13,9 @@ import { taskNode } from '../components/task-node.mjs';
 import { buildStatusBar } from '../components/status-bar.mjs';
 import { createFilterRow } from '../components/filter-row.mjs';
 import { hLayout } from '../components/h-layout.mjs';
-import { taskDot } from '../utils/colors.mjs';
+import { term } from '../utils/term.mjs';
 import { flexTwo } from '../utils/flex2.mjs';
-import { wrapLine } from '../utils/wrap-line.mjs';
 import { wrapUrls } from '../utils/wrap-urls.mjs';
-import { ansiWidth as textWidth, ansiSlice as visSlice, stripAnsi } from '../utils/ansi.mjs';
 import { getTerminalSize } from '../utils/terminal-size.mjs';
 import { theme } from '../utils/theme.mjs';
 import { initFocus, focusState, clampCursors, highlightLine, applyLogSelection, applyLogSearch, highlightSlot, getTreeSlots, logSel, logSearch, vimMode, cursorActualCol, lineWidth } from '../utils/focus.mjs';
@@ -106,7 +104,7 @@ function extractSelectedText(sel, logLines, lineToEntry) {
   const groups = []; // [{ entryIdx, firstLine, parts: string[] }]
   for (let i = a; i <= b && i < logLines.length; i++) {
     const eIdx = lineToEntry[i];
-    const clean = stripAnsi(logLines[i]);
+    const clean = term.plain(logLines[i]);
     const content = clean.length > PREFIX ? clean.slice(PREFIX) : '';
 
     let g = groups[groups.length - 1];
@@ -172,7 +170,7 @@ let copyFlashAt = 0; // 复制按钮反白反馈时间戳
  */
 function copyAllLogs() {
   const filtered = getFilteredLogs();
-  const text = filtered.map((e) => stripAnsi(e.text)).join('\n');
+  const text = filtered.map((e) => term.plain(e.text)).join('\n');
   if (!text) return;
   const b64 = Buffer.from(text, 'utf-8').toString('base64');
   process.stdout.write(`\x1b]52;c;${b64}\x07`);
@@ -207,8 +205,8 @@ on('mouse', (e) => {
   // 按钮文本（不含 ANSI），计算实际宽度
   const followLabel = vimMode.mode === 'follow' ? '[Vim]' : '[Follow]';
   const copyLabel = (Date.now() - copyFlashAt < 600) ? '[Copied]' : '[Copy]';
-  const followW = textWidth(followLabel);
-  const copyW = textWidth(copyLabel);
+  const followW = term.width(followLabel);
+  const copyW = term.width(copyLabel);
   const totalExtraW = followW + 1 + copyW;
   const extraX0 = columns - 2 - totalExtraW;
   const followX0 = extraX0;
@@ -282,7 +280,7 @@ export function makePage() {
     const mx = Math.max(0, Math.floor((W - msgW) / 2));
     const my = Math.max(0, Math.floor((H - msgH) / 2));
     const center = (s, w) => {
-      const tw = textWidth(s);
+      const tw = term.width(s);
       const pl = Math.max(0, Math.floor((w - 2 - tw) / 2));
       const pr = w - 2 - tw - pl;
       return '\u2502' + ' '.repeat(pl) + s + ' '.repeat(pr) + '\u2502';
@@ -310,7 +308,7 @@ export function makePage() {
   const BG = '\x1b[48;5;24m';  // 深青蓝，白字对比度高
   const FG = '\x1b[37m';
   const title = FG + '\x1b[1m' + ' \u2699 Hound \x1b[22m' + FG;
-  const statusLine = hLayout(buildStatusBar(stats, stats.totalElapsed), W - textWidth(' \u2699 Hound ') - 1).line;
+  const statusLine = hLayout(buildStatusBar(stats, stats.totalElapsed), W - term.width(' \u2699 Hound ') - 1).line;
   const header = BG + title + statusLine + ' ' + '\x1b[0m';
 
   // filtered logs
@@ -323,11 +321,11 @@ export function makePage() {
   const oldLineToEntry = _logCtx.lineToEntry;
   const prevTextW = lastLogTextW;
 
-  const rawWrapped = filtered.map((e) => wrapLine(wrapUrls(e.text), textW));
+  const rawWrapped = filtered.map((e) => term.wrap(wrapUrls(e.text), textW).map((l) => term.pad(l, textW)));
   const lineToEntry = [];
   const wrappedEntries = filtered.map((e, eIdx) => {
     const lines = rawWrapped[eIdx];
-    const dot = `${taskDot(e.taskId)} `;
+    const dot = `${term.style.taskDot(e.taskId)} `;
     for (let i = 0; i < lines.length; i++) lineToEntry.push(eIdx);
     return lines.map((l, i) => {
       return i === 0 ? dot + l : '  ' + l;
@@ -450,7 +448,7 @@ export function makePage() {
       // 先画 vim 光标块（反白，落在实际列），再整行换底色，避免光标处底色被重置
       const aCol = cursorActualCol(_logCtx);
       let line = highlightSlot(scrolledLog[logScreenPos], aCol, aCol + 1);
-      scrolledLog[logScreenPos] = '\x1b[48;5;237m' + line.replace(/\x1b\[0m/g, '\x1b[0m\x1b[48;5;237m') + '\x1b[0m';
+      scrolledLog[logScreenPos] = theme.focusBg + line.replace(/\x1b\[0m/g, '\x1b[0m' + theme.focusBg) + '\x1b[0m';
     }
   }
 
@@ -467,8 +465,8 @@ export function makePage() {
       ? '[' + pos + '/' + total + '] \u21b5 跳转 / Esc 取消'
       : '无匹配 / Esc 取消';
     const base = theme.rev + ' / ' + theme.revOff + ' ' + (q || '') + theme.rev + ' ' + theme.revOff;
-    const bw = textWidth(base);
-    const hw = textWidth(hint);
+    const bw = term.width(base);
+    const hw = term.width(hint);
     if (bw + hw + 1 <= W) {
       footerLine = base + ' '.repeat(W - bw - hw - 1) + ' ' + theme.faint + hint + theme.reset;
     } else {

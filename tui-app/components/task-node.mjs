@@ -5,7 +5,7 @@
  * @author hound-builder
  */
 
-import { taskColor } from '../utils/colors.mjs';
+import { term } from '../utils/term.mjs';
 import { tick } from '../utils/tick.mjs';
 import { theme } from '../utils/theme.mjs';
 
@@ -58,7 +58,7 @@ export function taskNode(task) {
     const iconColor = ICON_COLORS[task.status] || ICON_COLORS.pending;
     prefix = iconColor + icon + theme.reset;
   }
-  const name = taskColor(task.id) + task.description + theme.reset;
+  const name = term.style.task(task.id, task.description);
 
   const cb = theme.faint + (CHECKBOX[task.logFilter ?? 1]) + theme.reset;
 

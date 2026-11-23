@@ -5,8 +5,7 @@
  * @author hound-builder
  */
 
-import { textWidth } from '../utils/text-width.mjs';
-import { padLine } from '../utils/ansi.mjs';
+import { term } from '../utils/term.mjs';
 import { theme } from '../utils/theme.mjs';
 
 const TL = '\u256D'; const TR = '\u256E';
@@ -39,16 +38,16 @@ export function logSpace(width, height, content) {
   const innerH = height - 2;
 
   const overflow = innerW < 1
-    || content.some((l) => textWidth(l) > innerW)
+    || content.some((l) => term.width(l) > innerW)
     || content.length > innerH;
   if (overflow) {
     const rows = [];
     rows.push(border(TL + HZ.repeat(innerW) + TR));
     const msg = 'Overflow';
-    const padL = Math.max(0, Math.floor((innerW - textWidth(msg)) / 2));
+    const padL = Math.max(0, Math.floor((innerW - term.width(msg)) / 2));
     for (let y = 0; y < innerH; y++) {
       if (y === Math.floor(innerH / 2)) {
-        rows.push(theme.info + VT + theme.fgDefault + theme.dangerBold + theme.rev + padLine(' '.repeat(padL) + msg, innerW) + theme.revOff + theme.reset + theme.info + VT + theme.fgDefault);
+        rows.push(theme.info + VT + theme.fgDefault + theme.dangerBold + theme.rev + term.pad(' '.repeat(padL) + msg, innerW) + theme.revOff + theme.reset + theme.info + VT + theme.fgDefault);
       } else {
         rows.push(border(VT + ' '.repeat(innerW) + VT));
       }
@@ -60,7 +59,7 @@ export function logSpace(width, height, content) {
   const rows = [];
   rows.push(border(TL + HZ.repeat(innerW) + TR));
   for (let y = 0; y < innerH; y++) {
-    const line = y < content.length ? padLine(content[y], innerW) : ' '.repeat(innerW);
+    const line = y < content.length ? term.pad(content[y], innerW) : ' '.repeat(innerW);
     rows.push(theme.info + VT + theme.fgDefault + line + theme.info + VT + theme.fgDefault);
   }
   rows.push(border(BL + HZ.repeat(innerW) + BR));

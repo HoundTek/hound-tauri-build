@@ -1,20 +1,20 @@
-// 颜色系统 demo
-// 用法：node demos/colors-demo.mjs
+// 颜色系统 demo（term.style.task 稳定配色）
+// 用法：node pages/colors-demo.mjs
 
-import { taskColor, colorText, taskDot } from '../utils/colors.mjs';
+import { term } from '../utils/term.mjs';
 
 const tasks = ['compile', 'bundle', 'test', 'lint', 'deploy', 'rustc', 'tsc', 'webpack'];
 
-console.log('=== taskColor + 节点名 ===');
+console.log('=== style.task + 节点名 ===');
 for (const id of tasks) {
-  console.log(`  ${colorText(id, id)}  (${id})`);
+  console.log(`  ${term.style.task(id)}  (${id})`);
 }
 
-console.log('\n=== taskDot + 日志行 ===');
+console.log('\n=== style.taskDot + 日志行 ===');
 for (const id of tasks) {
-  console.log(`  ${taskDot(id)} log line from ${id}`);
+  console.log(`  ${term.style.taskDot(id)} log line from ${id}`);
 }
 
 console.log('\n=== 同ID确定性 ===');
-console.log(`  compile: ${taskColor('compile')}  -> ${taskColor('compile')}`);
-console.log(`  bundle:  ${taskColor('bundle')}   -> ${taskColor('bundle')}`);
+console.log(`  compile: ${term.style.task('compile')}  -> ${term.style.task('compile')}`);
+console.log(`  bundle:  ${term.style.task('bundle')}   -> ${term.style.task('bundle')}`);

@@ -7,6 +7,7 @@
 
 import { tick } from '../utils/tick.mjs';
 import { fmtTime } from './task-node.mjs';
+import { term } from '../utils/term.mjs';
 import { theme } from '../utils/theme.mjs';
 
 /**
@@ -51,8 +52,8 @@ export function buildStatusBar(stats, totalElapsed) {
   const runningText = `${theme.PULSE[tick % 10]}\u25CF${RESET} ${stats.running}`;
 
   const items = [
-    { text: theme.bold + label + RESET, width: label.length + 1 },
-    { text: runningText,                  width: 3 + String(stats.running).length },
+    { text: theme.bold + label + RESET, width: term.width(label) + 1 },
+    { text: runningText,                  width: term.width(runningText) },
     { text: item('\u25CB', '\x1b[90m', stats.pending),  width: 3 + String(stats.pending).length },
     { text: item('\u2713', '\x1b[32m', stats.done),     width: 3 + String(stats.done).length },
     { text: item('\u2717', '\x1b[31m', stats.failed),   width: 3 + String(stats.failed).length },
