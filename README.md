@@ -32,7 +32,7 @@ npm install -D hound-tauri-build
 - `@tauri-apps/cli` ^2.0.0（peer dependency）
 - Rust / Android SDK / Xcode 等对应平台的 Tauri 构建依赖
 - [`cross`](https://github.com/cross-rs/cross) + Docker（win/linux/linux-arm64 目标通过 `--runner cross` 交叉编译，同平台时 cross 自动回退到原生 cargo；Windows NSIS 打包在 Docker 镜像内完成，宿主机无需安装 makensis）
-- [`cargo-xwin`](https://github.com/Jake-Shadle/xwin) + clang（仅 win-arm64 目标需要：`cargo install cargo-xwin` + `rustup target add aarch64-pc-windows-msvc`）
+- [`cargo-xwin`](https://github.com/Jake-Shadle/xwin) + LLVM（仅 win-arm64 目标需要：`cargo install cargo-xwin` + `rustup target add aarch64-pc-windows-msvc`；macOS 上 `brew install llvm` 提供 clang/lld/llvm-rc，brew 的 keg-only 路径由 htb 构建时自动注入 PATH）
 
 > 不确定环境是否齐备？运行 `htb doctor` 一键体检——逐项报告依赖状态并给出安装/启动引导。
 
