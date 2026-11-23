@@ -66,12 +66,12 @@ function ensureSigningConfigs(content) {
   return content.replace('buildTypes {\n', SIGNING_CONFIGS_BLOCK);
 }
 
-/** 步骤 4：在 release buildType 中添加 signingConfig 赋值 */
+/** 步骤 4：在 release buildType 中添加 signingConfig 赋值（作为块内第一行，不消耗后续行缩进） */
 function ensureSigningConfigAssignment(content) {
   if (content.includes('signingConfig = signingConfigs.getByName("release")')) return content;
   return content.replace(
-    'getByName("release") {\n            isMinifyEnabled = true',
-    `getByName("release") {\n            isMinifyEnabled = true\n${SIGNING_CONFIG_ASSIGN}`
+    /getByName\("release"\) \{\n/,
+    `$&${SIGNING_CONFIG_ASSIGN}\n`
   );
 }
 
