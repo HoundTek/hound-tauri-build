@@ -85,6 +85,9 @@ const BUILD_RUN = {
   win: cross(['--runner', 'cross', '--target', TARGET_WIN, '--bundles', 'nsis']),
   // Windows on ARM：MSVC 目标经 cargo-xwin 交叉编译（官方推荐路径，stagedBuild 与 runner 无关，直接复用）
   'win-arm64': cross(['--runner', 'cargo-xwin', '--target', TARGET_WIN_ARM64, '--bundles', 'nsis']),
+  // 绿色单文件 exe（--no-bundle 跳过安装包打包，产物为 target/<triple>/release/<productName>.exe）
+  'win-portable': cross(['--runner', 'cross', '--target', TARGET_WIN, '--no-bundle']),
+  'win-arm64-portable': cross(['--runner', 'cargo-xwin', '--target', TARGET_WIN_ARM64, '--no-bundle']),
   mac: plain(['--target', TARGET_MAC, '--bundles', 'app']),
   'mac-arm64': plain(['--target', TARGET_MAC_ARM64, '--bundles', 'app']),
   'mac-universal': plain(['--target', TARGET_MAC_UNIVERSAL, '--bundles', 'app']),
@@ -103,9 +106,9 @@ const BUILD_EXTRA_INIT = {
 };
 // 图标依赖：mac-universal/mac-arm64 复用 mac 图标、win-arm64 复用 win 图标、
 // linux-arm64 复用 linux 图标（无独立 icon 任务）；web 无图标（null）
-const BUILD_ICON_DEP = { 'mac-universal': 'icon:mac', 'mac-arm64': 'icon:mac', 'win-arm64': 'icon:win', 'linux-arm64': 'icon:linux', web: null };
+const BUILD_ICON_DEP = { 'mac-universal': 'icon:mac', 'mac-arm64': 'icon:mac', 'win-arm64': 'icon:win', 'win-portable': 'icon:win', 'win-arm64-portable': 'icon:win', 'linux-arm64': 'icon:linux', web: null };
 const iconDeps = (p) => (p in BUILD_ICON_DEP ? (BUILD_ICON_DEP[p] ? [BUILD_ICON_DEP[p]] : []) : [`icon:${p}`]);
-const BUILD_PLATFORMS = ['win', 'win-arm64', 'mac', 'mac-arm64', 'mac-universal', 'linux', 'linux-arm64', 'android', 'ios', 'web'];
+const BUILD_PLATFORMS = ['win', 'win-arm64', 'win-portable', 'win-arm64-portable', 'mac', 'mac-arm64', 'mac-universal', 'linux', 'linux-arm64', 'android', 'ios', 'web'];
 const BUILD_TASKS = BUILD_PLATFORMS.map((p) => ({
   id: `build:${p}`,
   description: `build ${p}`,
@@ -122,6 +125,8 @@ const QUICK_RUN = {
   'mac-universal': plain(['--target', TARGET_MAC_UNIVERSAL, '--bundles', 'app']),
   win: cross(['--runner', 'cross', '--target', TARGET_WIN, '--bundles', 'nsis']),
   'win-arm64': cross(['--runner', 'cargo-xwin', '--target', TARGET_WIN_ARM64, '--bundles', 'nsis']),
+  'win-portable': cross(['--runner', 'cross', '--target', TARGET_WIN, '--no-bundle']),
+  'win-arm64-portable': cross(['--runner', 'cargo-xwin', '--target', TARGET_WIN_ARM64, '--no-bundle']),
   linux: cross(['--runner', 'cross', '--target', TARGET_LINUX, '--bundles', 'deb', 'appimage', 'rpm']),
   'linux-arm64': cross(['--runner', 'cross', '--target', TARGET_LINUX_ARM64, '--bundles', 'deb', 'appimage', 'rpm']),
   android: mobile(['android', 'build']),
@@ -129,7 +134,7 @@ const QUICK_RUN = {
   web: web(),
 };
 const QUICK_INIT = { linux: ['linux:init'], 'linux-arm64': ['linux:init'] };
-const QUICK_PLATFORMS = ['desktop', 'mac', 'mac-arm64', 'mac-universal', 'win', 'win-arm64', 'linux', 'linux-arm64', 'android', 'ios', 'web'];
+const QUICK_PLATFORMS = ['desktop', 'mac', 'mac-arm64', 'mac-universal', 'win', 'win-arm64', 'win-portable', 'win-arm64-portable', 'linux', 'linux-arm64', 'android', 'ios', 'web'];
 const QUICK_TASKS = QUICK_PLATFORMS.map((p) => ({
   id: `build-quick:${p}`,
   description: `build-quick ${p}`,
@@ -139,7 +144,7 @@ const QUICK_TASKS = QUICK_PLATFORMS.map((p) => ({
 }));
 
 // ---- collect:* 产物收集 ----
-const COLLECT_PLATFORMS = ['win', 'win-arm64', 'mac', 'mac-arm64', 'mac-universal', 'linux', 'linux-arm64', 'android', 'ios', 'web'];
+const COLLECT_PLATFORMS = ['win', 'win-arm64', 'win-portable', 'win-arm64-portable', 'mac', 'mac-arm64', 'mac-universal', 'linux', 'linux-arm64', 'android', 'ios', 'web'];
 const COLLECT_TASKS = COLLECT_PLATFORMS.map((p) => ({
   id: `collect:${p}`,
   description: `collect ${p} artifacts`,
