@@ -149,7 +149,7 @@ node bin/hound-tauri-sim-install.js [--project <dir>] [--launch] [--device <name
 | 桌面端（聚合） | `desktop` | win + win-arm64 + mac + mac-arm64 + mac-universal + linux + linux-arm64 |
 | Windows | `win` | x86_64 NSIS 安装包（cross + Docker 交叉编译） |
 | Windows ARM | `win-arm64` | aarch64-pc-windows-msvc NSIS 安装包（cargo-xwin 交叉编译；需 `cargo install cargo-xwin` + `rustup target add aarch64-pc-windows-msvc` + clang） |
-| Windows 绿色版 | `win-portable` | x86_64 单文件 exe（`--no-bundle`，不打安装包，双击即用；交叉编译链同 `win`） |
+| Windows 绿色版 | `win-portable` | x86_64 单文件 exe（`--no-bundle`，不打安装包，双击即用；x86_64-pc-windows-msvc 经 cargo-xwin 交叉编译——MSVC 目标静态链接 WebView2Loader，无需附带 dll，工具链同 `win-arm64`） |
 | Windows ARM 绿色版 | `win-arm64-portable` | aarch64 单文件 exe（`--no-bundle`；交叉编译链同 `win-arm64`） |
 | macOS Intel | `mac` | x86_64-apple-darwin |
 | macOS Apple Silicon | `mac-arm64` | aarch64-apple-darwin（universal 已包含，单独出包可省一半体积；需 `rustup target add aarch64-apple-darwin`） |

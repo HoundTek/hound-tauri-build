@@ -29,6 +29,7 @@ const IOS_BUILD_ARGS = ['ios', 'build', ...IOS_TARGET_ARGS, ...IOS_NO_SIGN_ARGS]
 
 // 交叉编译目标三元组
 const TARGET_WIN = 'x86_64-pc-windows-gnu';
+const TARGET_WIN_MSVC = 'x86_64-pc-windows-msvc';
 const TARGET_WIN_ARM64 = 'aarch64-pc-windows-msvc';
 const TARGET_LINUX = 'x86_64-unknown-linux-gnu';
 const TARGET_LINUX_ARM64 = 'aarch64-unknown-linux-gnu';
@@ -86,7 +87,8 @@ const BUILD_RUN = {
   // Windows on ARM：MSVC 目标经 cargo-xwin 交叉编译（官方推荐路径，stagedBuild 与 runner 无关，直接复用）
   'win-arm64': cross(['--runner', 'cargo-xwin', '--target', TARGET_WIN_ARM64, '--bundles', 'nsis']),
   // 绿色单文件 exe（--no-bundle 跳过安装包打包，产物为 target/<triple>/release/<productName>.exe）
-  'win-portable': cross(['--runner', 'cross', '--target', TARGET_WIN, '--no-bundle']),
+  // 走 MSVC 目标：webview2-com-sys 对 MSVC 静态链接 WebView2Loader（GNU 目标动态依赖 WebView2Loader.dll）
+  'win-portable': cross(['--runner', 'cargo-xwin', '--target', TARGET_WIN_MSVC, '--no-bundle']),
   'win-arm64-portable': cross(['--runner', 'cargo-xwin', '--target', TARGET_WIN_ARM64, '--no-bundle']),
   mac: plain(['--target', TARGET_MAC, '--bundles', 'app']),
   'mac-arm64': plain(['--target', TARGET_MAC_ARM64, '--bundles', 'app']),
@@ -125,7 +127,7 @@ const QUICK_RUN = {
   'mac-universal': plain(['--target', TARGET_MAC_UNIVERSAL, '--bundles', 'app']),
   win: cross(['--runner', 'cross', '--target', TARGET_WIN, '--bundles', 'nsis']),
   'win-arm64': cross(['--runner', 'cargo-xwin', '--target', TARGET_WIN_ARM64, '--bundles', 'nsis']),
-  'win-portable': cross(['--runner', 'cross', '--target', TARGET_WIN, '--no-bundle']),
+  'win-portable': cross(['--runner', 'cargo-xwin', '--target', TARGET_WIN_MSVC, '--no-bundle']),
   'win-arm64-portable': cross(['--runner', 'cargo-xwin', '--target', TARGET_WIN_ARM64, '--no-bundle']),
   linux: cross(['--runner', 'cross', '--target', TARGET_LINUX, '--bundles', 'deb', 'appimage', 'rpm']),
   'linux-arm64': cross(['--runner', 'cross', '--target', TARGET_LINUX_ARM64, '--bundles', 'deb', 'appimage', 'rpm']),

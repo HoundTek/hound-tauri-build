@@ -73,7 +73,7 @@
       },
       "win-portable": {
         "dir": "win-portable",
-        "patterns": ["src-tauri/target/x86_64-pc-windows-gnu/release/{productName}.exe"]
+        "patterns": ["src-tauri/target/x86_64-pc-windows-msvc/release/{productName}.exe"]
       },
       "win-arm64-portable": {
         "dir": "win-arm64-portable",
